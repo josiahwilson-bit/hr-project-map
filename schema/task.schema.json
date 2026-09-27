@@ -1,1 +1,81 @@
-{"$schema":"http://json-schema.org/draft-07/schema#","additionalProperties":false,"description":"A unit of work inside a project, moving through the enforced lifecycle. Completed requires evidence; Verified requires independent verification.","properties":{"assignee_id":{"description":"Person id of the assignee; null while Proposed.","type":["string","null"]},"due_date":{"description":"Due date as YYYY-MM-DD.","pattern":"^\\d{4}-\\d{2}-\\d{2}$","type":["string","null"]},"id":{"description":"Unique identifier (uuid hex).","minLength":1,"type":"string"},"project_id":{"description":"Project this task belongs to.","minLength":1,"type":"string"},"status":{"description":"Lifecycle status. Transitions are enforced in code.","enum":["Proposed","Assigned","In Progress","Submitted","Verified","Completed"],"type":"string"},"title":{"description":"Short title of the work.","minLength":1,"type":"string"},"milestone_id":{"description":"Milestone id this task belongs to; null when ungrouped. Must belong to the same project.","type":["string","null"]}},"required":["id","project_id","title","status"],"title":"Task","type":"object"}
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "A unit of work inside a project, moving through the enforced lifecycle with human review. Under Review \u2192 Accepted \u2192 Completed \u2192 Verified; Under Review \u2192 Rejected is terminal. Completed requires evidence; Verified requires independent verification.",
+  "properties": {
+    "assignee_id": {
+      "description": "Person id of the assignee; null while Proposed.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "due_date": {
+      "description": "Due date as YYYY-MM-DD.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "id": {
+      "description": "Unique identifier (uuid hex).",
+      "minLength": 1,
+      "type": "string"
+    },
+    "milestone_id": {
+      "description": "Milestone id this task belongs to; null when ungrouped. Must belong to the same project.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "project_id": {
+      "description": "Project this task belongs to.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "reviewer_id": {
+      "description": "Person id of the reviewer (set when the task enters Under Review; only this reviewer may decide).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "description": "Lifecycle status. Transitions are enforced in code.",
+      "enum": [
+        "Proposed",
+        "Assigned",
+        "In Progress",
+        "Submitted",
+        "Under Review",
+        "Accepted",
+        "Rejected",
+        "Completed",
+        "Verified"
+      ],
+      "type": "string"
+    },
+    "supersedes_task_id": {
+      "description": "For rework tasks: the rejected task this one supersedes. Null otherwise.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title": {
+      "description": "Short title of the work.",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "title",
+    "status"
+  ],
+  "title": "Task",
+  "type": "object"
+}
