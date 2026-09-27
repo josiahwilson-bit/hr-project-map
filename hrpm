@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""hrpm — command-line interface for the HR-PM Map (v0.2).
+
+Standard library only. Default database is ./hrpm.db (override with --db).
+
+    hrpm project create --name NAME --owner OWNER_ID [--description DESC]
+    hrpm project list
+    hrpm project show PROJECT_ID
+    hrpm task create --project PROJECT_ID --title TITLE [--assignee PERSON_ID] [--milestone MILESTONE_ID]
+    hrpm task list --project PROJECT_ID
+    hrpm evidence add --task TASK_ID --by PERSON_ID --type TYPE --ref REF
+"""
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from src import db, evidence, milestones, projects, tasks
+
+
+def _short(uid):
+    return uid[:8]
+
+
+def cmd_project_create(args):
+    pid = projects.add_project(
+        args.db, args.name, description=args.description, owner_id=args.owner
+    )
+    print("Created project %r (%s)" % (args.name, _short(pid)))
+    return pid
+
+
+def cmd_project_list(args):
+    rows = projects.list_projects(args.db)
+    if not rows:
+        print("No projects.")
+        return
+    for p in rows:
+        print("%s  %-28s  %-11s  owner=%s"
+              % (_short(p["id"]), p["name"][:28], p["status"],
+                 _short(p["owner_id"])))
+
+
+def cmd_project_show(args):
+    p = projects.get_project(args.db, args.project_id)
+    if not p:
+        raise ValueError("No project found with id %r." % args.project_id)
+    print("Project: %s (%s)" % (p["name"], _short(p["id"])))
+    print("  status:      %s" % p["status"])
+    print("  owner:       %s" % _short(p["owner_id"]))
+    if p["description"]:
+        print("  description: %s" % p["description"])
+    print("  Milestones:")
+    ms_list = milestones.list_milestones_by_project(args.db, p["id"])
+    if not ms_list:
+        print("    (none)")
+    for m in ms_list:
+        print("    %s  %-26s  %s" % (_short(m["id"]), m["name"][:26],
+                                     m["status"]))
+    print("  Tasks:")
+    t_list = tasks.list_tasks_by_project(args.db, p["id"])
+    if not t_list:
+        print("    (none)")
+    for t in t_list:
+        assignee = _short(t["assignee_id"]) if t["assignee_id"] else "-"
+        print("    %s  %-26s  %-11s  assignee=%s"
+              % (_short(t["id"]), t["title"][:26], t["status"], assignee))
+
+
+def cmd_task_create(args):
+    tid = tasks.add_task(
+        args.db, args.project, args.title,
+        assignee_id=args.assignee, milestone_id=args.milestone,
+    )
+    t = tasks.get_task(args.db, tid)
+    print("Created task %r (%s) [%s]" % (args.title, _short(tid), t["status"]))
+
+
+def cmd_task_list(args):
+    if not projects.get_project(args.db, args.project):
+        raise ValueError("No project found with id %r." % args.project)
+    rows = tasks.list_tasks_by_project(args.db, args.project)
+    if not rows:
+        print("No tasks for project %s." % _short(args.project))
+        return
+    for t in rows:
+        assignee = _short(t["assignee_id"]) if t["assignee_id"] else "-"
+        print("%s  %-28s  %-11s  assignee=%s"
+              % (_short(t["id"]), t["title"][:28], t["status"], assignee))
+
+
+def cmd_evidence_add(args):
+    before = tasks.get_task(args.db, args.task)
+    before_status = before["status"] if before else "?"
+    eid = evidence.submit_evidence(
+        args.db, args.task, submitted_by=args.by,
+        evidence_type=args.type, url_or_path=args.ref,
+    )
+    t = tasks.get_task(args.db, args.task)
+    print("Submitted evidence %s for task %s [%s -> %s]"
+          % (_short(eid), _short(args.task), before_status, t["status"]))
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="hrpm", description="HR-PM Map CLI — people, projects, tasks, evidence."
+    )
+    parser.add_argument("--db", default="./hrpm.db",
+                        help="SQLite database path (default ./hrpm.db)")
+    sub = parser.add_subparsers(dest="entity", required=True)
+
+    p_proj = sub.add_parser("project", help="project commands")
+    p_sub = p_proj.add_subparsers(dest="action", required=True)
+    p_create = p_sub.add_parser("create", help="create a project")
+    p_create.add_argument("--name", required=True)
+    p_create.add_argument("--owner", required=True,
+                          help="person id of the accountable owner")
+    p_create.add_argument("--description", default=None)
+    p_sub.add_parser("list", help="list projects")
+    p_show = p_sub.add_parser("show", help="show a project with milestones and tasks")
+    p_show.add_argument("project_id")
+
+    p_task = sub.add_parser("task", help="task commands")
+    t_sub = p_task.add_subparsers(dest="action", required=True)
+    t_create = t_sub.add_parser("create", help="create a task")
+    t_create.add_argument("--project", required=True)
+    t_create.add_argument("--title", required=True)
+    t_create.add_argument("--assignee", default=None)
+    t_create.add_argument("--milestone", default=None)
+    t_list = t_sub.add_parser("list", help="list tasks of a project")
+    t_list.add_argument("--project", required=True)
+
+    p_ev = sub.add_parser("evidence", help="evidence commands")
+    e_sub = p_ev.add_subparsers(dest="action", required=True)
+    e_add = e_sub.add_parser("add", help="submit evidence for a task")
+    e_add.add_argument("--task", required=True)
+    e_add.add_argument("--by", required=True, help="submitter person id")
+    e_add.add_argument("--type", required=True, help="evidence type")
+    e_add.add_argument("--ref", required=True,
+                       help="reference: path, URL, or note")
+
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    db.init_db(args.db)
+    try:
+        if args.entity == "project":
+            if args.action == "create":
+                cmd_project_create(args)
+            elif args.action == "list":
+                cmd_project_list(args)
+            elif args.action == "show":
+                cmd_project_show(args)
+        elif args.entity == "task":
+            if args.action == "create":
+                cmd_task_create(args)
+            elif args.action == "list":
+                cmd_task_list(args)
+        elif args.entity == "evidence":
+            if args.action == "add":
+                cmd_evidence_add(args)
+    except ValueError as exc:
+        print("Error: %s" % exc, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
