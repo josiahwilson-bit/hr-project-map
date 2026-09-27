@@ -9,6 +9,9 @@
   //   "status": "In Progress",
   //   "due_date": "2026-10-15"
   // }
-  // Status: Proposed | Assigned | In Progress | Submitted | Completed | Verified
-  // Completed requires evidence; Verified requires independent verification.
+  // Status: Proposed | Assigned | In Progress | Submitted | Under Review |
+  //   Accepted | Rejected | Completed | Verified
+  // Rejected is terminal; rework creates a new task with supersedes_task_id.
+  // Accepted requires a reviewer decision; Completed requires evidence;
+  // Verified requires independent verification.
 ]
