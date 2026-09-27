@@ -9,7 +9,7 @@ import unittest
 # Make `src` importable when running `python -m unittest discover -s tests`.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src import db, evidence, people, projects, tasks
+from src import completion, db, evidence, people, projects, tasks
 
 
 class WorkflowTest(unittest.TestCase):
@@ -37,7 +37,7 @@ class WorkflowTest(unittest.TestCase):
         return manager, worker, project
 
     def test_full_lifecycle(self):
-        """Person -> Project -> Task -> Evidence -> Verification -> Completion."""
+        """Person -> Project -> Task -> Evidence -> Completion -> Verification."""
         manager, worker, project = self._make_people_and_project()
 
         # 1. Proposed
@@ -71,19 +71,25 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual(ev_row["submitted_by"], worker)
         self.assertIsNone(ev_row["verified_by"])
 
-        # 5. Submitted -> Verified (independent verifier)
+        # 5. Submitted -> Completed (evidence-gated: evidence exists)
+        completion.complete_task(self.db_path, task)
+        self.assertEqual(
+            tasks.get_task(self.db_path, task)["status"], "Completed"
+        )
+
+        # 6. Evidence verified by an independent verifier (task stays Completed)
         evidence.verify_evidence(self.db_path, ev, verified_by=manager)
         self.assertEqual(
-            tasks.get_task(self.db_path, task)["status"], "Verified"
+            tasks.get_task(self.db_path, task)["status"], "Completed"
         )
         ev_row = evidence.get_evidence(self.db_path, ev)
         self.assertEqual(ev_row["verified_by"], manager)
         self.assertIsNotNone(ev_row["verified_at"])
 
-        # 6. Verified -> Completed
-        tasks.update_task_status(self.db_path, task, "Completed")
+        # 7. Completed -> Verified (requires independent verification)
+        completion.verify_task(self.db_path, task, manager)
         self.assertEqual(
-            tasks.get_task(self.db_path, task)["status"], "Completed"
+            tasks.get_task(self.db_path, task)["status"], "Verified"
         )
 
     def test_self_verification_rejected(self):
