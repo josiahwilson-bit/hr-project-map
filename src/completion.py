@@ -1,15 +1,17 @@
-"""Evidence-gated completion and verification.
+"""Evidence-gated completion and verification (v0.4).
 
 Core principle: the system records what happened; it does not manufacture
 evidence that something happened.
 
-  * A task becomes Completed only when at least one evidence record exists
-    for it (Submitted -> Completed).
+  * A task becomes Completed only when it was Accepted in human review AND
+    at least one evidence record exists for it (Accepted -> Completed).
   * A task becomes Verified only when that evidence was independently
     verified by someone other than the submitter (Completed -> Verified).
 
-No synthetic evidence is ever generated: these functions only move a task
-forward when the required records already exist.
+Accepted, Completed, and Verified are three separate recorded facts: a
+reviewer's acceptance is not completion, and completion is not
+verification. No synthetic evidence is ever generated: these functions
+only move a task forward when the required records already exist.
 """
 
 from .db import connect
@@ -33,22 +35,22 @@ def _require_active_person(conn, person_id, action):
 
 
 def complete_task(db_path, task_id, actor_id=None):
-    """Move a Submitted task to Completed.
+    """Move an Accepted task to Completed.
 
-    Raises ValueError unless the task is Submitted AND at least one evidence
+    Raises ValueError unless the task is Accepted AND at least one evidence
     record exists for it. The exact message for the missing-evidence case is
     "cannot complete task without evidence".
 
     ``actor_id`` is passed through to the underlying transition, which emits
-    the single audit event for Submitted -> Completed. Refused completions
+    the single audit event for Accepted -> Completed. Refused completions
     emit no event.
     """
     conn = connect(db_path)
     try:
         row = _get_task_row(conn, task_id)
-        if row["status"] != "Submitted":
+        if row["status"] != "Accepted":
             raise ValueError(
-                "Only Submitted tasks can be completed; task %r is %r."
+                "Only Accepted tasks can be completed; task %r is %r."
                 % (task_id, row["status"])
             )
         if not _has_evidence(conn, task_id):

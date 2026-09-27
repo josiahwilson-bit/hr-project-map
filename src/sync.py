@@ -1,26 +1,29 @@
 """JSON <-> SQLite import/export for the HR-PM Map.
 
-``export_to_json`` dumps the five entity tables to ``data/*.json`` as plain
-JSON arrays (no comments). ``import_from_json`` loads those arrays back into
-a database, refusing any record that references a nonexistent entity and
-skipping records whose id already exists.
+``export_to_json`` dumps the entity tables to ``data/*.json`` as plain
+JSON arrays (no comments). ``import_from_json`` loads those arrays back
+into a database, refusing any record that references a nonexistent entity
+and skipping records whose id already exists.
 
 Import order follows the dependency chain:
-people -> projects -> milestones -> tasks -> evidence.
+people -> projects -> intakes -> milestones -> tasks -> evidence -> reviews.
 """
 
 import json
 import os
 
 from .db import MILESTONE_STATUSES, PERSON_ROLES, TASK_STATUSES, connect, init_db
+from .intake import INTAKE_STATUSES
 
 # (table name, file name) in dependency order.
 _TABLES = (
     ("people", "people.json"),
     ("projects", "projects.json"),
+    ("intakes", "intakes.json"),
     ("milestones", "milestones.json"),
     ("tasks", "tasks.json"),
     ("evidence", "evidence.json"),
+    ("reviews", "reviews.json"),
 )
 
 
@@ -104,9 +107,11 @@ def import_from_json(db_path, data_dir):
     try:
         _import_people(conn, payloads["people"])
         _import_projects(conn, payloads["projects"])
+        _import_intakes(conn, payloads["intakes"])
         _import_milestones(conn, payloads["milestones"])
         _import_tasks(conn, payloads["tasks"])
         _import_evidence(conn, payloads["evidence"])
+        _import_reviews(conn, payloads["reviews"])
         conn.commit()
     finally:
         conn.close()
@@ -158,6 +163,81 @@ def _import_projects(conn, records):
             " created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (pid, str(name).strip(), rec.get("description"), owner_id,
              status, rec.get("created_at")),
+        )
+
+
+def _import_intakes(conn, records):
+    for rec in records:
+        iid = _require_id(rec, "intakes")
+        if _exists(conn, "intakes", iid):
+            continue
+        title = rec.get("title")
+        scope = rec.get("scope")
+        requester_id = rec.get("requester_id")
+        status = rec.get("status", "Pending")
+        decided_by = rec.get("decided_by")
+        project_id = rec.get("project_id")
+        if not title or not str(title).strip():
+            raise ValueError("Intake %r is missing a title." % iid)
+        if not scope or not str(scope).strip():
+            raise ValueError("Intake %r is missing a scope." % iid)
+        if not requester_id or not _exists(conn, "people", requester_id):
+            raise ValueError(
+                "Intake %r references missing person (requester_id) %r."
+                % (iid, requester_id)
+            )
+        if status not in INTAKE_STATUSES:
+            raise ValueError(
+                "Intake %r has invalid status %r." % (iid, status)
+            )
+        if decided_by and not _exists(conn, "people", decided_by):
+            raise ValueError(
+                "Intake %r references missing person (decided_by) %r."
+                % (iid, decided_by)
+            )
+        if project_id and not _exists(conn, "projects", project_id):
+            raise ValueError(
+                "Intake %r references missing project %r."
+                % (iid, project_id)
+            )
+        conn.execute(
+            "INSERT INTO intakes (id, title, scope, description,"
+            " requester_id, status, created_at, decided_by, decided_at,"
+            " decision_reason, project_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (iid, str(title).strip(), str(scope).strip(),
+             rec.get("description"), requester_id, status,
+             rec.get("created_at"), decided_by, rec.get("decided_at"),
+             rec.get("decision_reason"), project_id),
+        )
+
+
+def _import_reviews(conn, records):
+    for rec in records:
+        rid = _require_id(rec, "reviews")
+        if _exists(conn, "reviews", rid):
+            continue
+        task_id = rec.get("task_id")
+        reviewer_id = rec.get("reviewer_id")
+        decision = rec.get("decision")
+        if not task_id or not _exists(conn, "tasks", task_id):
+            raise ValueError(
+                "Review %r references missing task %r." % (rid, task_id)
+            )
+        if not reviewer_id or not _exists(conn, "people", reviewer_id):
+            raise ValueError(
+                "Review %r references missing person (reviewer_id) %r."
+                % (rid, reviewer_id)
+            )
+        if decision not in ("Accepted", "Rejected"):
+            raise ValueError(
+                "Review %r has invalid decision %r." % (rid, decision)
+            )
+        conn.execute(
+            "INSERT INTO reviews (id, task_id, reviewer_id, decision,"
+            " reason, decided_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (rid, task_id, reviewer_id, decision, rec.get("reason"),
+             rec.get("decided_at")),
         )
 
 
@@ -226,12 +306,27 @@ def _import_tasks(conn, records):
                 )
         if status not in TASK_STATUSES:
             raise ValueError("Task %r has invalid status %r." % (tid, status))
+        reviewer_id = rec.get("reviewer_id")
+        if reviewer_id and not _exists(conn, "people", reviewer_id):
+            raise ValueError(
+                "Task %r references missing person (reviewer_id) %r."
+                % (tid, reviewer_id)
+            )
+        supersedes_task_id = rec.get("supersedes_task_id")
+        if supersedes_task_id and not _exists(conn, "tasks",
+                                              supersedes_task_id):
+            raise ValueError(
+                "Task %r references missing task (supersedes_task_id) %r."
+                % (tid, supersedes_task_id)
+            )
         conn.execute(
             "INSERT INTO tasks (id, project_id, milestone_id, title,"
-            " assignee_id, status, due_date)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " assignee_id, status, due_date, reviewer_id,"
+            " supersedes_task_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (tid, project_id, milestone_id, str(title).strip(),
-             assignee_id, status, rec.get("due_date")),
+             assignee_id, status, rec.get("due_date"), reviewer_id,
+             supersedes_task_id),
         )
 
 

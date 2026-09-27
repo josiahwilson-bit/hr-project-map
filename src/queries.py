@@ -3,11 +3,12 @@
 This module performs SELECT queries only — it never inserts, updates, or
 deletes. The dashboard reports state; it does not modify it.
 
-Status buckets:
+Status buckets (v0.4):
   * outstanding: Proposed, Assigned, In Progress (work not yet submitted)
-  * submitted:   Submitted (work awaiting completion)
+  * submitted:   Submitted, Under Review (work awaiting a review decision)
   * completed:   Completed (evidence recorded, not yet verified)
   * verified:    Verified (independently verified work)
+  * rejected:    Rejected (terminal review outcome; rework is a new task)
 """
 
 from .db import connect, row_to_dict
@@ -43,8 +44,13 @@ def outstanding_tasks(db_path, project_id=None):
 
 
 def submitted_tasks(db_path, project_id=None):
-    """Tasks in Submitted. Read-only."""
-    return _tasks_by_statuses(db_path, ("Submitted",), project_id)
+    """Tasks in Submitted or Under Review (awaiting a review decision).
+
+    Read-only.
+    """
+    return _tasks_by_statuses(
+        db_path, ("Submitted", "Under Review"), project_id
+    )
 
 
 def completed_tasks(db_path, project_id=None):
@@ -55,6 +61,15 @@ def completed_tasks(db_path, project_id=None):
 def verified_tasks(db_path, project_id=None):
     """Tasks in Verified. Read-only."""
     return _tasks_by_statuses(db_path, ("Verified",), project_id)
+
+
+def rejected_tasks(db_path, project_id=None):
+    """Tasks in Rejected (terminal review outcome). Read-only.
+
+    Rejected tasks are never reopened; any rework appears as a separate
+    task whose ``supersedes_task_id`` points at the rejected original.
+    """
+    return _tasks_by_statuses(db_path, ("Rejected",), project_id)
 
 
 def project_summary(db_path, project_id):
