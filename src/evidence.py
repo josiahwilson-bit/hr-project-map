@@ -1,8 +1,12 @@
 """Evidence submission and independent verification.
 
-Submitting evidence moves a task to Submitted. Verifying evidence moves the
-task to Verified — but only when the verifier is a *different* person than
+Submitting evidence moves a task to Submitted. Verifying evidence stamps the
+evidence record — but only when the verifier is a *different* person than
 the submitter. Self-verification is rejected.
+
+Verifying evidence does NOT move the task: the task advances through its
+evidence-gated lifecycle via ``src/completion.py`` (Submitted -> Completed
+requires evidence; Completed -> Verified requires independent verification).
 """
 
 import uuid
@@ -66,7 +70,9 @@ def verify_evidence(db_path, evidence_id, verified_by):
 
     ``verified_by`` must be a different person than the submitter —
     self-verification raises ValueError. On success the evidence is stamped
-    and its task is moved to ``Verified``.
+    with the verifier and timestamp. The task's status is intentionally left
+    untouched: use ``completion.complete_task()`` and
+    ``completion.verify_task()`` to advance the task.
     """
     conn = connect(db_path)
     try:
@@ -85,7 +91,6 @@ def verify_evidence(db_path, evidence_id, verified_by):
                 "Self-verification is not allowed: verifier %r is also the"
                 " submitter." % verified_by
             )
-        task_id = ev["task_id"]
         conn.execute(
             "UPDATE evidence SET verified_by = ?, verified_at = ?"
             " WHERE id = ?",
@@ -94,10 +99,6 @@ def verify_evidence(db_path, evidence_id, verified_by):
         conn.commit()
     finally:
         conn.close()
-    # Move the task to Verified (no-op if a previous evidence item already did).
-    from .tasks import get_task
-    if get_task(db_path, task_id)["status"] == "Submitted":
-        update_task_status(db_path, task_id, "Verified")
 
 
 def get_evidence(db_path, evidence_id):

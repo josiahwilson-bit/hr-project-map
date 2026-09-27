@@ -11,23 +11,48 @@ from datetime import datetime, timezone
 PERSON_ROLES = ("Employee", "Contractor", "Manager", "Client")
 
 # The six lifecycle stages, shared by projects and tasks.
+#
+# v0.2 ordering note: Completed now comes BEFORE Verified. A task is
+# Completed when evidence exists; it is Verified only after that evidence
+# was independently verified by someone other than the submitter.
+# The system records what happened; it does not manufacture evidence
+# that something happened.
 TASK_STATUSES = (
     "Proposed",
     "Assigned",
     "In Progress",
     "Submitted",
-    "Verified",
     "Completed",
+    "Verified",
 )
 
 # Allowed task status transitions. Forward movement is one step at a time;
 # the only backward move permitted is Assigned -> Proposed (un-assigning).
+# Evidence gates are enforced in tasks.update_task_status():
+#   -> Completed requires at least one evidence record for the task
+#   -> Verified requires independently verified evidence (verifier != submitter)
 ALLOWED_TRANSITIONS = {
     "Proposed": {"Assigned"},
     "Assigned": {"Proposed", "In Progress"},
     "In Progress": {"Submitted"},
-    "Submitted": {"Verified"},
-    "Verified": {"Completed"},
+    "Submitted": {"Completed"},
+    "Completed": {"Verified"},
+    "Verified": set(),
+}
+
+# Milestone lifecycle: simplified, forward-only. Milestones do NOT require
+# evidence — only tasks carry the evidence gate.
+MILESTONE_STATUSES = (
+    "Proposed",
+    "Assigned",
+    "In Progress",
+    "Completed",
+)
+
+MILESTONE_TRANSITIONS = {
+    "Proposed": {"Assigned"},
+    "Assigned": {"In Progress"},
+    "In Progress": {"Completed"},
     "Completed": set(),
 }
 
@@ -46,17 +71,29 @@ CREATE TABLE IF NOT EXISTS projects (
     description TEXT,
     owner_id TEXT NOT NULL REFERENCES people(id),
     status TEXT NOT NULL DEFAULT 'Proposed'
-        CHECK (status IN ('Proposed','Assigned','In Progress','Submitted','Verified','Completed')),
+        CHECK (status IN ('Proposed','Assigned','In Progress','Submitted','Completed','Verified')),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS milestones (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'Proposed'
+        CHECK (status IN ('Proposed','Assigned','In Progress','Completed')),
+    due_date TEXT,
     created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
+    milestone_id TEXT REFERENCES milestones(id),
     title TEXT NOT NULL,
     assignee_id TEXT REFERENCES people(id),
     status TEXT NOT NULL DEFAULT 'Proposed'
-        CHECK (status IN ('Proposed','Assigned','In Progress','Submitted','Verified','Completed')),
+        CHECK (status IN ('Proposed','Assigned','In Progress','Submitted','Completed','Verified')),
     due_date TEXT
 );
 
@@ -75,6 +112,13 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_task ON evidence(task_id);
 """
 
+# Indexes that reference v0.2 columns. Created after the v0.1 -> v0.2
+# migration in init_db(), because the columns may not exist yet on old DBs.
+_INDEX_SQL_V02 = """
+CREATE INDEX IF NOT EXISTS idx_tasks_milestone ON tasks(milestone_id);
+CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
+"""
+
 
 def utcnow():
     """Current UTC time as an ISO-8601 string."""
@@ -90,10 +134,21 @@ def connect(path):
 
 
 def init_db(path):
-    """Create all HR-PM Map tables. Safe to call on an existing database."""
+    """Create all HR-PM Map tables. Safe to call on an existing database.
+
+    v0.2 migration: databases created by v0.1 lack ``tasks.milestone_id``.
+    The column is added in place when missing, so old databases keep working.
+    """
     conn = connect(path)
     try:
         conn.executescript(_SCHEMA_SQL)
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(tasks)")]
+        if "milestone_id" not in cols:
+            conn.execute(
+                "ALTER TABLE tasks ADD COLUMN milestone_id"
+                " TEXT REFERENCES milestones(id)"
+            )
+        conn.executescript(_INDEX_SQL_V02)
         conn.commit()
     finally:
         conn.close()
@@ -103,8 +158,13 @@ def validate_transition(current, new):
     """Raise ValueError unless moving from ``current`` to ``new`` is allowed.
 
     Allowed moves: one step forward along
-    Proposed -> Assigned -> In Progress -> Submitted -> Verified -> Completed,
+    Proposed -> Assigned -> In Progress -> Submitted -> Completed -> Verified,
     plus Assigned -> Proposed (un-assigning).
+
+    The transition table alone does not capture the evidence gates — those
+    are enforced by ``tasks.update_task_status`` (a task cannot become
+    Completed without evidence, nor Verified without independent
+    verification).
     """
     if new not in TASK_STATUSES:
         raise ValueError(
