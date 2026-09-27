@@ -2,6 +2,7 @@
 
 import uuid
 
+from . import audit
 from .db import TASK_STATUSES, connect, row_to_dict, utcnow
 
 
@@ -62,9 +63,14 @@ def list_projects(db_path):
         conn.close()
 
 
-def update_project_status(db_path, project_id, new_status):
+def update_project_status(db_path, project_id, new_status, actor_id=None):
     """Set a project's status. Project status is a manual judgment call by
-    the owner, so any of the six lifecycle stages is accepted."""
+    the owner, so any of the six lifecycle stages is accepted.
+
+    ``actor_id`` is the person performing the change (may be None when
+    unknown). Every accepted change emits exactly one audit event; a
+    no-op (new_status == current) or a missing project emits none.
+    """
     if new_status not in TASK_STATUSES:
         raise ValueError(
             "Invalid status %r. Must be one of %s."
@@ -72,12 +78,21 @@ def update_project_status(db_path, project_id, new_status):
         )
     conn = connect(db_path)
     try:
-        cur = conn.execute(
+        row = conn.execute(
+            "SELECT status FROM projects WHERE id = ?", (project_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("No project found with id %r." % project_id)
+        current = row["status"]
+        if new_status == current:
+            return  # idempotent: already there, nothing to record
+        conn.execute(
             "UPDATE projects SET status = ? WHERE id = ?",
             (new_status, project_id),
         )
         conn.commit()
-        if cur.rowcount == 0:
-            raise ValueError("No project found with id %r." % project_id)
     finally:
         conn.close()
+    # Log only after the change committed successfully.
+    audit.log_event(db_path, "project", project_id, current, new_status,
+                    actor_id=actor_id)

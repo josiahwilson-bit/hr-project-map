@@ -11,6 +11,7 @@ requires evidence; Completed -> Verified requires independent verification).
 
 import uuid
 
+from . import audit
 from .db import connect, row_to_dict, utcnow
 from .tasks import update_task_status
 
@@ -59,9 +60,10 @@ def submit_evidence(db_path, task_id, submitted_by, evidence_type,
         conn.commit()
     finally:
         conn.close()
-    # Move the task to Submitted (no-op if already Submitted).
+    # Move the task to Submitted (no-op if already Submitted). The submitter
+    # is recorded as the actor of this transition's single audit event.
     if task["status"] == "In Progress":
-        update_task_status(db_path, task_id, "Submitted")
+        update_task_status(db_path, task_id, "Submitted", actor_id=submitted_by)
     return evidence_id
 
 
@@ -97,8 +99,18 @@ def verify_evidence(db_path, evidence_id, verified_by):
             (verified_by, utcnow(), evidence_id),
         )
         conn.commit()
+        task_status = conn.execute(
+            "SELECT status FROM tasks WHERE id = ?", (ev["task_id"],)
+        ).fetchone()["status"]
     finally:
         conn.close()
+    # Verifying evidence changes no task state, so it gets its own audit
+    # event recording the verification action itself (prev == new).
+    audit.log_event(
+        db_path, "task", ev["task_id"], task_status, task_status,
+        actor_id=verified_by,
+        note="evidence %s verified" % evidence_id[:8],
+    )
 
 
 def get_evidence(db_path, evidence_id):

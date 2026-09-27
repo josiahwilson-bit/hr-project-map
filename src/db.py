@@ -110,6 +110,24 @@ CREATE TABLE IF NOT EXISTS evidence (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_task ON evidence(task_id);
+
+-- v0.3: append-only audit trail. One row per accepted state transition.
+-- There is intentionally no update/delete path for this table in src/audit.py:
+-- history cannot be rewritten. actor_id may be NULL when the actor is unknown
+-- (system); entity_id is not a foreign key because it may reference tasks,
+-- milestones, or projects — src/audit.py validates the reference instead.
+CREATE TABLE IF NOT EXISTS audit_events (
+    event_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('task','milestone','project')),
+    entity_id TEXT NOT NULL,
+    prev_state TEXT,
+    new_state TEXT NOT NULL,
+    actor_id TEXT REFERENCES people(id),
+    timestamp TEXT NOT NULL,
+    note TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_events(entity_type, entity_id);
 """
 
 # Indexes that reference v0.2 columns. Created after the v0.1 -> v0.2

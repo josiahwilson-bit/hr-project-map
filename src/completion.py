@@ -32,12 +32,16 @@ def _require_active_person(conn, person_id, action):
         )
 
 
-def complete_task(db_path, task_id):
+def complete_task(db_path, task_id, actor_id=None):
     """Move a Submitted task to Completed.
 
     Raises ValueError unless the task is Submitted AND at least one evidence
     record exists for it. The exact message for the missing-evidence case is
     "cannot complete task without evidence".
+
+    ``actor_id`` is passed through to the underlying transition, which emits
+    the single audit event for Submitted -> Completed. Refused completions
+    emit no event.
     """
     conn = connect(db_path)
     try:
@@ -51,7 +55,7 @@ def complete_task(db_path, task_id):
             raise ValueError("cannot complete task without evidence")
     finally:
         conn.close()
-    update_task_status(db_path, task_id, "Completed")
+    update_task_status(db_path, task_id, "Completed", actor_id=actor_id)
 
 
 def verify_task(db_path, task_id, verifier_id):
@@ -60,6 +64,9 @@ def verify_task(db_path, task_id, verifier_id):
     Raises ValueError unless the task is Completed AND an evidence record
     exists that was verified by ``verifier_id`` where the verifier differs
     from the submitter. The verifier must be an active person.
+
+    The verifier is recorded as the actor of the single audit event for
+    Completed -> Verified. Refused verifications emit no event.
     """
     conn = connect(db_path)
     try:
@@ -84,4 +91,4 @@ def verify_task(db_path, task_id, verifier_id):
             )
     finally:
         conn.close()
-    update_task_status(db_path, task_id, "Verified")
+    update_task_status(db_path, task_id, "Verified", actor_id=verifier_id)

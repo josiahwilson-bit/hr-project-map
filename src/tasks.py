@@ -11,6 +11,7 @@ not manufacture evidence that something happened.
 
 import uuid
 
+from . import audit
 from .db import connect, row_to_dict, validate_transition
 
 
@@ -127,11 +128,14 @@ def list_tasks_by_project(db_path, project_id):
         conn.close()
 
 
-def assign_task(db_path, task_id, assignee_id):
+def assign_task(db_path, task_id, assignee_id, actor_id=None):
     """Assign a task to a person (Proposed -> Assigned).
 
     Also supports reassignment while still Assigned. Tasks that have moved
     past Assigned cannot be (re)assigned — model rework as a new task.
+
+    ``actor_id`` is the person performing the assignment (may be None when
+    unknown). A successful assignment emits one audit event.
     """
     conn = connect(db_path)
     try:
@@ -141,8 +145,10 @@ def assign_task(db_path, task_id, assignee_id):
         if current == "Proposed":
             validate_transition(current, "Assigned")
             new_status = "Assigned"
+            note = "assigned to %s" % assignee_id
         elif current == "Assigned":
             new_status = "Assigned"  # reassignment, no status change
+            note = "reassigned to %s" % assignee_id
         else:
             raise ValueError(
                 "Cannot assign task in status %r. Only Proposed or Assigned"
@@ -155,9 +161,12 @@ def assign_task(db_path, task_id, assignee_id):
         conn.commit()
     finally:
         conn.close()
+    # Log only after the assignment committed successfully.
+    audit.log_event(db_path, "task", task_id, current, new_status,
+                    actor_id=actor_id, note=note)
 
 
-def update_task_status(db_path, task_id, new_status):
+def update_task_status(db_path, task_id, new_status, actor_id=None):
     """Move a task to ``new_status``, enforcing the allowed transitions.
 
     Evidence gates (v0.2 — the system records what happened; it never
@@ -165,13 +174,18 @@ def update_task_status(db_path, task_id, new_status):
       * ``Completed`` requires at least one evidence record for the task.
       * ``Verified`` requires independently verified evidence, i.e. an
         evidence record whose verifier differs from its submitter.
+
+    ``actor_id`` is the person performing the transition (may be None when
+    unknown). Every accepted transition emits exactly one audit event;
+    refused transitions emit none. A no-op (new_status == current) emits
+    no event.
     """
     conn = connect(db_path)
     try:
         row = _get_task_row(conn, task_id)
         current = row["status"]
         if new_status == current:
-            return  # idempotent: already there
+            return  # idempotent: already there, nothing to record
         validate_transition(current, new_status)
         if new_status == "Completed" and not _has_evidence(conn, task_id):
             raise ValueError(
@@ -192,3 +206,6 @@ def update_task_status(db_path, task_id, new_status):
         conn.commit()
     finally:
         conn.close()
+    # Log only after the transition committed successfully.
+    audit.log_event(db_path, "task", task_id, current, new_status,
+                    actor_id=actor_id)

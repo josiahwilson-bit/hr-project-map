@@ -7,6 +7,7 @@ carry the evidence gate.
 
 import uuid
 
+from . import audit
 from .db import (
     MILESTONE_STATUSES,
     MILESTONE_TRANSITIONS,
@@ -78,11 +79,15 @@ def list_milestones_by_project(db_path, project_id):
         conn.close()
 
 
-def update_milestone_status(db_path, milestone_id, new_status):
+def update_milestone_status(db_path, milestone_id, new_status, actor_id=None):
     """Move a milestone to ``new_status``.
 
     Transitions are strictly forward-only:
     Proposed -> Assigned -> In Progress -> Completed. No backward moves.
+
+    ``actor_id`` is the person performing the transition (may be None when
+    unknown). Every accepted transition emits exactly one audit event;
+    refused transitions emit none.
     """
     if new_status not in MILESTONE_STATUSES:
         raise ValueError(
@@ -94,7 +99,7 @@ def update_milestone_status(db_path, milestone_id, new_status):
         row = _get_milestone_row(conn, milestone_id)
         current = row["status"]
         if new_status == current:
-            return  # idempotent: already there
+            return  # idempotent: already there, nothing to record
         if new_status not in MILESTONE_TRANSITIONS.get(current, set()):
             raise ValueError(
                 "Invalid milestone status transition: %r -> %r."
@@ -107,3 +112,6 @@ def update_milestone_status(db_path, milestone_id, new_status):
         conn.commit()
     finally:
         conn.close()
+    # Log only after the transition committed successfully.
+    audit.log_event(db_path, "milestone", milestone_id, current, new_status,
+                    actor_id=actor_id)
