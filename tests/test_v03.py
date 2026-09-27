@@ -16,7 +16,8 @@ import unittest
 # Make `src` importable when running `python -m unittest discover -s tests`.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src import audit, completion, db, evidence, milestones, people, projects, queries, tasks
+from src import (audit, completion, db, evidence, milestones, people,
+                 projects, queries, review, tasks)
 
 
 class AuditTrailTest(unittest.TestCase):
@@ -106,8 +107,10 @@ class AuditTrailTest(unittest.TestCase):
             self.db_path, task, submitted_by=worker,
             evidence_type="document", url_or_path="/tmp/docs.pdf",
         )
+        review.start_review(self.db_path, task, manager)
+        review.accept_review(self.db_path, task, manager)
         before = audit.count_events(self.db_path)
-        # Submitted -> Completed is fine (evidence exists)...
+        # Accepted -> Completed is fine (evidence exists)...
         completion.complete_task(self.db_path, task, actor_id=worker)
         self.assertEqual(audit.count_events(self.db_path), before + 1)
         # ...but a fresh task with no evidence path must refuse AND log nothing.
@@ -119,7 +122,9 @@ class AuditTrailTest(unittest.TestCase):
             self.db_path, task2, submitted_by=worker,
             evidence_type="document", url_or_path="/tmp/x.pdf",
         )
-        # Corrupt the DB directly: Submitted with the evidence row removed.
+        review.start_review(self.db_path, task2, manager)
+        review.accept_review(self.db_path, task2, manager)
+        # Corrupt the DB directly: Accepted with the evidence row removed.
         conn = db.connect(self.db_path)
         try:
             conn.execute("DELETE FROM evidence WHERE task_id = ?", (task2,))
@@ -130,7 +135,7 @@ class AuditTrailTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             completion.complete_task(self.db_path, task2, actor_id=worker)
         self.assertEqual(tasks.get_task(self.db_path, task2)["status"],
-                         "Submitted")
+                         "Accepted")
         self.assertEqual(audit.count_events(self.db_path), n_before)
 
     def test_milestone_and_project_transitions_are_audited(self):
@@ -183,6 +188,8 @@ class DashboardTest(unittest.TestCase):
         evidence.submit_evidence(
             self.db_path, self.t_completed, submitted_by=self.worker,
             evidence_type="document", url_or_path="/tmp/c.pdf")
+        review.start_review(self.db_path, self.t_completed, self.manager)
+        review.accept_review(self.db_path, self.t_completed, self.manager)
         completion.complete_task(self.db_path, self.t_completed)
 
         self.t_verified = tasks.add_task(
@@ -193,6 +200,8 @@ class DashboardTest(unittest.TestCase):
             self.db_path, self.t_verified, submitted_by=self.worker,
             evidence_type="document", url_or_path="/tmp/v.pdf")
         evidence.verify_evidence(self.db_path, eid, verified_by=self.manager)
+        review.start_review(self.db_path, self.t_verified, self.manager)
+        review.accept_review(self.db_path, self.t_verified, self.manager)
         completion.complete_task(self.db_path, self.t_verified)
         completion.verify_task(self.db_path, self.t_verified, self.manager)
 

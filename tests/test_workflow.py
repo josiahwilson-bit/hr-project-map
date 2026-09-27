@@ -9,7 +9,7 @@ import unittest
 # Make `src` importable when running `python -m unittest discover -s tests`.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src import completion, db, evidence, people, projects, tasks
+from src import audit, completion, db, evidence, people, projects, review, tasks
 
 
 class WorkflowTest(unittest.TestCase):
@@ -71,13 +71,26 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual(ev_row["submitted_by"], worker)
         self.assertIsNone(ev_row["verified_by"])
 
-        # 5. Submitted -> Completed (evidence-gated: evidence exists)
+        # 5. Submitted -> Under Review -> Accepted (human review)
+        review.start_review(self.db_path, task, manager)
+        self.assertEqual(
+            tasks.get_task(self.db_path, task)["status"], "Under Review"
+        )
+        review.accept_review(self.db_path, task, manager, note="meets spec")
+        self.assertEqual(
+            tasks.get_task(self.db_path, task)["status"], "Accepted"
+        )
+        decisions = review.get_reviews(self.db_path, task)
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(decisions[0]["decision"], "Accepted")
+
+        # 6. Accepted -> Completed (evidence-gated: evidence exists)
         completion.complete_task(self.db_path, task)
         self.assertEqual(
             tasks.get_task(self.db_path, task)["status"], "Completed"
         )
 
-        # 6. Evidence verified by an independent verifier (task stays Completed)
+        # 7. Evidence verified by an independent verifier (task stays Completed)
         evidence.verify_evidence(self.db_path, ev, verified_by=manager)
         self.assertEqual(
             tasks.get_task(self.db_path, task)["status"], "Completed"
@@ -86,7 +99,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual(ev_row["verified_by"], manager)
         self.assertIsNotNone(ev_row["verified_at"])
 
-        # 7. Completed -> Verified (requires independent verification)
+        # 8. Completed -> Verified (requires independent verification)
         completion.verify_task(self.db_path, task, manager)
         self.assertEqual(
             tasks.get_task(self.db_path, task)["status"], "Verified"
@@ -132,6 +145,15 @@ class WorkflowTest(unittest.TestCase):
         # Cannot go backward: In Progress -> Assigned
         with self.assertRaises(ValueError):
             tasks.update_task_status(self.db_path, task, "Assigned")
+
+        # v0.4: review is mandatory — Submitted cannot jump to Completed,
+        # Accepted, or Verified without going Under Review first.
+        ev = evidence.submit_evidence(
+            self.db_path, task, worker, "note", "done"
+        )
+        for skipped in ("Completed", "Accepted", "Verified", "Rejected"):
+            with self.assertRaises(ValueError):
+                tasks.update_task_status(self.db_path, task, skipped)
 
         # Unknown status is rejected too.
         with self.assertRaises(ValueError):

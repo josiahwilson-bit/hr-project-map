@@ -1,6 +1,7 @@
-"""v0.2 tests: evidence-gated completion, milestones, sync, and the CLI-era
-lifecycle (Submitted -> Completed -> Verified). Temp SQLite database;
-stdlib unittest only."""
+"""v0.2 tests: evidence-gated completion, milestones, sync, and the
+v0.4-era lifecycle
+(Submitted -> Under Review -> Accepted -> Completed -> Verified).
+Temp SQLite database; stdlib unittest only."""
 
 import json
 import os
@@ -12,7 +13,7 @@ import unittest
 # Make `src` importable when running `python -m unittest discover -s tests`.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src import completion, db, evidence, milestones, people, projects, sync, tasks
+from src import completion, db, evidence, milestones, people, projects, review, sync, tasks
 
 
 class EvidenceGatesTest(unittest.TestCase):
@@ -45,30 +46,35 @@ class EvidenceGatesTest(unittest.TestCase):
         tasks.update_task_status(self.db_path, task, "In Progress")
         return task
 
-    def _force_submitted_without_evidence(self, task):
-        """Simulate a corrupt import or direct-DB edit: Submitted with no
+    def _force_accepted_without_evidence(self, task):
+        """Simulate a corrupt import or direct-DB edit: Accepted with no
         evidence rows. The gates must still hold."""
         conn = db.connect(self.db_path)
         try:
             conn.execute(
-                "UPDATE tasks SET status = 'Submitted' WHERE id = ?", (task,)
+                "UPDATE tasks SET status = 'Accepted' WHERE id = ?", (task,)
             )
             conn.commit()
         finally:
             conn.close()
 
+    def _drive_to_accepted(self, task, worker, verifier):
+        """Submitted -> Under Review -> Accepted via the review workflow."""
+        review.start_review(self.db_path, task, verifier)
+        review.accept_review(self.db_path, task, verifier)
+
     def test_task_cannot_complete_without_evidence(self):
         manager, worker, project = self._make_people_and_project()
         task = self._task_in_progress(project, worker)
-        self._force_submitted_without_evidence(task)
+        self._force_accepted_without_evidence(task)
 
         with self.assertRaisesRegex(ValueError, "without evidence"):
             completion.complete_task(self.db_path, task)
         with self.assertRaisesRegex(ValueError, "without evidence"):
             tasks.update_task_status(self.db_path, task, "Completed")
-        # Task must remain Submitted.
+        # Task must remain Accepted.
         self.assertEqual(
-            tasks.get_task(self.db_path, task)["status"], "Submitted"
+            tasks.get_task(self.db_path, task)["status"], "Accepted"
         )
 
     def test_task_can_complete_with_evidence(self):
@@ -78,6 +84,7 @@ class EvidenceGatesTest(unittest.TestCase):
             self.db_path, task, submitted_by=worker,
             evidence_type="document", url_or_path="docs/draft.md",
         )
+        self._drive_to_accepted(task, worker, manager)
         completion.complete_task(self.db_path, task)
         self.assertEqual(
             tasks.get_task(self.db_path, task)["status"], "Completed"
@@ -90,6 +97,7 @@ class EvidenceGatesTest(unittest.TestCase):
             self.db_path, task, submitted_by=worker,
             evidence_type="note", url_or_path="done",
         )
+        self._drive_to_accepted(task, worker, manager)
         completion.complete_task(self.db_path, task)
 
         # Evidence exists but nobody verified it: both paths must refuse.
@@ -108,6 +116,7 @@ class EvidenceGatesTest(unittest.TestCase):
             self.db_path, task, submitted_by=worker,
             evidence_type="document", url_or_path="docs/draft.md",
         )
+        self._drive_to_accepted(task, worker, manager)
         completion.complete_task(self.db_path, task)
         evidence.verify_evidence(self.db_path, ev, verified_by=manager)
         completion.verify_task(self.db_path, task, manager)
@@ -124,6 +133,7 @@ class EvidenceGatesTest(unittest.TestCase):
             self.db_path, task, submitted_by=worker,
             evidence_type="note", url_or_path="done",
         )
+        self._drive_to_accepted(task, worker, manager)
         completion.complete_task(self.db_path, task)
         # verify_evidence itself rejects self-verification; force the stamp
         # directly to test verify_task's own guard.
@@ -324,8 +334,9 @@ class SyncTest(unittest.TestCase):
 
 
 class TransitionOrderTest(unittest.TestCase):
-    """v0.2 lifecycle: Submitted -> Completed -> Verified. The old
-    Submitted -> Verified shortcut is gone."""
+    """v0.4 lifecycle: Submitted -> Under Review -> Accepted -> Completed
+    -> Verified. Review is mandatory — Submitted can no longer jump to
+    Completed or Verified."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -354,10 +365,17 @@ class TransitionOrderTest(unittest.TestCase):
         self.assertEqual(
             tasks.get_task(self.db_path, task)["status"], "Submitted"
         )
-        # Submitted -> Verified directly is refused.
+        # Submitted -> Verified and Submitted -> Completed are both refused.
         with self.assertRaises(ValueError):
             tasks.update_task_status(self.db_path, task, "Verified")
-        # The legal path still works: Submitted -> Completed -> Verified.
+        with self.assertRaises(ValueError):
+            tasks.update_task_status(self.db_path, task, "Completed")
+        with self.assertRaises(ValueError):
+            completion.complete_task(self.db_path, task)
+        # The legal path works:
+        # Submitted -> Under Review -> Accepted -> Completed -> Verified.
+        review.start_review(self.db_path, task, manager)
+        review.accept_review(self.db_path, task, manager)
         completion.complete_task(self.db_path, task)
         completion.verify_task(self.db_path, task, manager)
         self.assertEqual(
