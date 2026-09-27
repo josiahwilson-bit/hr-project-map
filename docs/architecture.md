@@ -1,10 +1,13 @@
-# Architecture — HR-PM Map v0.3
+# Architecture — HR-PM Map v0.4
 
 ## The backbone
 
 Every unit of organizational work is modeled as a single chain:
 
 ```
+Intake                  (a staged project request: requester + scope)
+  │
+  ▼
 Person
   │
   ▼
@@ -25,15 +28,19 @@ Deliverable             (what the task produces — implicit in v0.2)
 Evidence                (proof the work was done)
   │
   ▼
-Completion              (evidence exists: the work happened)
+Review                  (a human accepts or rejects the submitted work)
+  │
+  ▼
+Completion              (accepted, evidence exists: the work happened)
   │
   ▼
 Verification            (independent confirmation of the evidence)
 ```
 
-In v0.2, **Deliverable** is still implicit: it is whatever the task's
-evidence describes. Everything else is a first-class entity with a JSON
-Schema (`schema/`) and a SQLite table (`src/db.py`).
+In v0.4, **Deliverable** is still implicit: it is whatever the task's
+evidence describes. **Intake** and **Review** are first-class entities with
+JSON Schema (`schema/`) and SQLite tables (`src/db.py`); everything else
+carries forward from v0.2/v0.3.
 
 > **The evidence-gated principle.** The system records what happened; it
 > does not manufacture evidence that something happened. A task cannot be
@@ -82,29 +89,43 @@ Proposed → Assigned → In Progress → Completed
 No backward moves, no skipping. Unlike tasks, milestones carry **no evidence
 gate** — they are planning markers, not proof of work.
 
+### Intake
+A staged project request: `id`, `title`, `scope`, `requester_id`,
+`description`, `status` (`Pending`/`Approved`/`Rejected`), `project_id`,
+`decided_by`, `decision_reason`, `created_at`, `decided_at`. Created via
+`src/intake.py`; title, scope, and an active requester are required.
+Approval creates exactly one project (`project_id` is filled in and the
+intake leaves `Pending`); approving an already-decided intake is refused.
+Rejecting an intake requires a reason and creates no project.
+
 ### Task
 A unit of work inside a project: `id`, `project_id`, `milestone_id`
-(optional), `title`, `assignee_id`, `status`, `due_date`.
+(optional), `title`, `assignee_id`, `reviewer_id`, `supersedes_task_id`,
+`status`, `due_date`.
 
 Status is the heart of the workflow. Transitions are **enforced in code**
-(`src/tasks.py`), and completion/verification are **evidence-gated**
-(`src/completion.py`):
+(`src/tasks.py`), review decisions in `src/review.py`, and
+completion/verification are **evidence-gated** (`src/completion.py`):
 
 ```
-Proposed → Assigned → In Progress → Submitted → Completed → Verified
-              ↑________|                              ↑          ↑
-              (un-assign only)                  (requires   (requires
-                                                 evidence)   evidence +
-                                                             verifier)
+Proposed → Assigned → In Progress → Submitted → Under Review → Accepted → Completed → Verified
+                                              ↘ Rejected (TERMINAL)
 ```
 
 - Forward movement is one step at a time; skipping stages is rejected.
 - The only backward move is `Assigned → Proposed` (withdrawing an assignment).
-- Nothing moves backward out of `In Progress` or later — rework is modeled
-  as a *new* task, preserving the audit trail.
-- `Submitted → Completed` is refused when the task has no evidence records.
+- `Submitted → Under Review` requires a named, active reviewer, stored on
+  the task; only that reviewer may accept or reject it.
+- `Under Review → Accepted` emits an audit event recording the reviewer.
+- `Under Review → Rejected` requires a recorded reason and is **terminal**:
+  no outgoing transitions exist.
+- `Accepted → Completed` is refused when the task has no evidence records.
 - `Completed → Verified` is refused when no evidence was verified by someone
   other than the submitter.
+- Rework is modeled as a *new* task: `rework_task()` copies the rejected
+  task's title, project, and milestone, sets `supersedes_task_id` to the
+  original, and leaves the original `Rejected`. History is linked, never
+  rewritten.
 - No synthetic evidence is ever generated: the gates only pass when the
   required records already exist.
 
@@ -123,8 +144,17 @@ evidence record. `src/evidence.py` rejects self-verification: the verifier's
 id must differ from the submitter's id. Verifying evidence stamps the record
 but does not move the task; the task advances via `src/completion.py`.
 
+### Review
+The human judgment between submission and completion. `src/review.py`
+enforces the decision protocol: start (Submitted → Under Review, records the
+reviewer), accept (Under Review → Accepted, audited), or reject
+(Under Review → Rejected, terminal, reason required). Each accepted review
+writes one row to the `reviews` table: task, reviewer, decision, reason,
+timestamp. Skipping stages, deciding without a reviewer, rejecting without a
+reason, and deciding someone else's review are all refused.
+
 ### Completion
-A task reaches `Completed` only from `Submitted`, and only when at least one
+A task reaches `Completed` only from `Accepted`, and only when at least one
 evidence record exists for it (`completion.complete_task()`). A task reaches
 `Verified` only from `Completed`, and only when an evidence record was
 verified by someone other than the submitter
@@ -152,7 +182,9 @@ append-only history.
   and imports them back with full foreign-key validation.
 - **A small CLI.** `hrpm` covers the daily operations (project/task/evidence)
   without pretending to be a product. v0.3 adds read-only `hrpm dashboard`
-  views that report state without modifying it.
+  views that report state without modifying it; v0.4 adds
+  `hrpm intake create/list/approve/reject`, `hrpm review start/accept/reject`,
+  and `hrpm task rework` for the intake and review workflow.
 
 ## The audit trail (v0.3)
 
@@ -179,7 +211,20 @@ considered recorded.
 > The dashboard reports state; the audit trail records the transition;
 > neither one creates evidence of an event that did not occur.
 
-## What v0.3 deliberately omits
+## The terminal-Rejected principle (v0.4)
+
+> Rejected is a recorded terminal outcome, not an invitation to rewrite
+> history. Rework creates a new task and preserves the relationship to the
+> original.
+
+Rejection ends the task's lifecycle. The rejected task keeps its evidence,
+its review decision, and its audit history — all queryable via
+`hrpm dashboard rejected`. If the work must be attempted again, a new task
+is created with `supersedes_task_id` pointing at the rejected one. There is
+no transition back, no status edit, and no delete path; the map grows by
+adding records, never by altering the past.
+
+## What v0.4 deliberately omits
 
 Authentication, a web UI, payroll, recruiting automation, notifications, AI
 agents, and any cloud service. Those are layers *on top of* this map — and
