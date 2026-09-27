@@ -1,4 +1,4 @@
-# Workflow — Task Lifecycle (v0.2)
+# Workflow — Task Lifecycle (v0.3)
 
 A task moves through six stages. Each stage has a clear actor and a clear
 meaning. The transitions are enforced by `src/tasks.py` and the
@@ -12,6 +12,12 @@ Proposed → Assigned → In Progress → Submitted → Completed → Verified
 The governing principle: **the system records what happened; it does not
 manufacture evidence that something happened.** A task's status is derived
 from records that already exist — it can never be typed into existence.
+
+**Audit logging (v0.3):** every accepted transition on a task, milestone, or
+project appends one row to the `audit_events` table recording the entity,
+previous state, new state, actor, and UTC timestamp. Refused transitions
+emit no event, and the trail is append-only — history cannot be rewritten.
+Without an audit record, the transition is not considered recorded.
 
 ## Stages
 

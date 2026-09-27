@@ -1,4 +1,4 @@
-# Architecture — HR-PM Map v0.2
+# Architecture — HR-PM Map v0.3
 
 ## The backbone
 
@@ -151,9 +151,35 @@ append-only history.
   examples; `src/sync.py` exports live database snapshots to the same format
   and imports them back with full foreign-key validation.
 - **A small CLI.** `hrpm` covers the daily operations (project/task/evidence)
-  without pretending to be a product.
+  without pretending to be a product. v0.3 adds read-only `hrpm dashboard`
+  views that report state without modifying it.
 
-## What v0.2 deliberately omits
+## The audit trail (v0.3)
+
+Every accepted state transition on a task, milestone, or project appends one
+row to the `audit_events` table:
+
+| Column       | Meaning                                              |
+|--------------|------------------------------------------------------|
+| `event_id`   | UUID primary key                                     |
+| `entity_type`| `task`, `milestone`, or `project`                    |
+| `entity_id`  | id of the entity that changed                        |
+| `prev_state` | state before the transition                          |
+| `new_state`  | state after the transition                           |
+| `actor_id`   | person who performed the transition (NULL if unknown)|
+| `timestamp`  | UTC ISO-8601 time of the transition                  |
+| `note`       | optional context (e.g. "reassigned to …")            |
+
+The append-only invariant: `src/audit.py` exposes `log_event()` and
+`get_events()` only. There is no update or delete path for audit rows, so
+history cannot be rewritten through the code. Refused or invalid
+transitions emit no event — a transition without an audit record is not
+considered recorded.
+
+> The dashboard reports state; the audit trail records the transition;
+> neither one creates evidence of an event that did not occur.
+
+## What v0.3 deliberately omits
 
 Authentication, a web UI, payroll, recruiting automation, notifications, AI
 agents, and any cloud service. Those are layers *on top of* this map — and
