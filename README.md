@@ -1,6 +1,6 @@
 # HR-PM Map — Human-Resource Project Management Map
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **License:** MIT
 **Purpose:** Open-source HR/project-management information architecture
 
@@ -15,27 +15,50 @@
 | Tests                  | Present |
 | CLI (`hrpm`)           | Present |
 | JSON ↔ SQLite sync     | Present |
+| Audit trail            | Present |
+| Dashboard queries      | Present |
 | External integrations  | None    |
 | Production deployment  | None    |
 | HR automation          | None    |
 
-## Status register — v0.2.0
+## Status register — v0.3.0
 
-| Concern     | State           |
-|-------------|-----------------|
-| DESIGN      | IMPLEMENTED     |
-| CODE        | IMPLEMENTED     |
-| TESTS       | TESTED          |
-| INTEGRATION | NOT ESTABLISHED |
-| PRODUCTION  | NOT DEPLOYED    |
-| RUNTIME     | NOT OBSERVED    |
+**IMPLEMENTATION**
+
+| Component         | State       |
+|-----------------|-------------|
+| Audit events    | IMPLEMENTED |
+| Dashboard queries | IMPLEMENTED |
+| CLI dashboard   | IMPLEMENTED |
+
+**TEST**
+
+| Concern                  | State  |
+|--------------------------|--------|
+| Audit transition coverage | TESTED |
+| Append-only behavior      | TESTED |
+| Invalid transition        | TESTED |
+| Dashboard/query behavior  | TESTED |
+
+| Concern      | State           |
+|--------------|-----------------|
+| INTEGRATION  | NOT ESTABLISHED |
+| RUNTIME      | NOT OBSERVED    |
+| EVIDENCE     | NOT ESTABLISHED |
+| VERIFICATION | NOT ESTABLISHED |
+| DEPLOYMENT   | NONE            |
+| PROMOTION    | NONE            |
 
 A passing test demonstrates implemented behavior in the test environment; it
 does not establish production deployment or real-world verification.
 
+> The dashboard reports state; the audit trail records the transition;
+> neither one creates evidence of an event that did not occur.
+
 This repository is the **source of truth for the information structure** —
-v0.2 makes the map persistent and queryable. Planned increments:
-`v0.3` project/task API → `v0.4` basic web interface →
+v0.3 adds accountability and visibility: every transition is audit-logged,
+and read-only dashboards report outstanding, submitted, completed, and
+verified work. Planned increments: `v0.4` basic web interface →
 `v0.5` human approval and evidence tracking →
 `v1.0` usable HR/project-management product.
 
@@ -72,7 +95,7 @@ v0.2 models exactly this chain — nothing more. No payroll, no recruiting
 automation, no AI orchestration, no cloud services. Just a clean, local,
 auditable data map you can run for free.
 
-## Task lifecycle (v0.2)
+## Task lifecycle (v0.3)
 
 ```
 Proposed → Assigned → In Progress → Submitted → Completed → Verified
@@ -153,13 +176,13 @@ A cleaner end-to-end script:
 python3 -m unittest discover -s tests -v
 ```
 
-## CLI usage (v0.2)
+## CLI usage (v0.3)
 
 The `hrpm` script (repo root, stdlib only) wraps the common operations.
 Default database is `./hrpm.db`; override with `--db PATH`.
 
 ```bash
-# People are added via Python (no CLI command yet in v0.2)
+# People are added via Python (no CLI command yet in v0.3)
 python3 -c "
 from src import db, people
 db.init_db('hrpm.db')
@@ -176,6 +199,32 @@ print(people.add_person('hrpm.db', 'Jane Doe', 'Manager'))"
 
 # Evidence (task must be In Progress; moves it to Submitted)
 ./hrpm evidence add --task <TASK_ID> --by <PERSON_ID> --type document --ref docs/copy.md
+```
+
+### Dashboard (v0.3, read-only)
+
+Dashboard commands report database state and never modify it:
+
+```bash
+./hrpm dashboard outstanding [--project <PROJECT_ID>]
+./hrpm dashboard submitted   [--project <PROJECT_ID>]
+./hrpm dashboard completed   [--project <PROJECT_ID>]
+./hrpm dashboard verified    [--project <PROJECT_ID>]
+```
+
+### Audit trail (v0.3)
+
+Every accepted state transition on a task, milestone, or project emits
+exactly one audit event (`audit_events` table): entity, previous state, new
+state, actor, and UTC timestamp. Refused or invalid transitions emit no
+event. The trail is append-only — `src/audit.py` exposes no update or
+delete API, so history cannot be rewritten.
+
+```bash
+python3 -c "
+from src import audit
+for e in audit.get_events('hrpm.db', 'task', '<TASK_ID>'):
+    print(e['prev_state'], '->', e['new_state'], 'by', e['actor_id'], e['timestamp'])"
 ```
 
 Completion and verification stay in Python for v0.2 (they are judgment
@@ -209,7 +258,7 @@ hr-project-map/
 ├── README.md            # This file
 ├── LICENSE              # MIT
 ├── .gitignore
-├── hrpm                 # CLI: project/task/evidence commands (v0.2)
+├── hrpm                 # CLI: project/task/evidence/dashboard commands (v0.3)
 ├── docs/
 │   ├── architecture.md  # Data model and entity definitions
 │   ├── workflow.md      # Lifecycle stages and responsibilities
@@ -228,6 +277,8 @@ hr-project-map/
 │   └── evidence.json
 ├── src/                 # Python implementation (stdlib only)
 │   ├── db.py            # SQLite schema + init_db()
+│   ├── audit.py         # Append-only audit trail (v0.3)
+│   ├── queries.py       # Read-only dashboard queries (v0.3)
 │   ├── people.py        # Person CRUD
 │   ├── projects.py      # Project CRUD + status
 │   ├── milestones.py    # Milestone CRUD + forward-only transitions
@@ -237,24 +288,30 @@ hr-project-map/
 │   └── sync.py          # JSON <-> SQLite import/export
 └── tests/
     ├── test_workflow.py # Full lifecycle test on a temp database
-    └── test_v02.py      # Evidence gates, milestones, sync, transition order
+    ├── test_v02.py      # Evidence gates, milestones, sync, transition order
+    └── test_v03.py      # Audit trail + dashboard queries (v0.3)
 ```
 
-## v0.2 scope
+## v0.3 scope
 
-**Added in v0.2:**
-- Milestone entity (project checkpoints, forward-only lifecycle, no evidence gate)
-- JSON ↔ SQLite import/export (`src/sync.py`) with FK validation
-- `hrpm` CLI for project/task/evidence operations
-- Evidence-gated completion: Completed requires evidence, Verified requires
-  an independent verifier (`src/completion.py`)
+**Added in v0.3:**
+- Append-only audit events (`src/audit.py`, `audit_events` table): one event
+  per accepted transition — entity, prev/new state, actor, UTC timestamp.
+  Refused transitions emit no event; no update/delete API exists.
+- Read-only dashboard/query layer (`src/queries.py`): outstanding,
+  submitted, completed, verified task views + per-project summary.
+- `hrpm dashboard` CLI commands (read-only; report state, never modify it).
+- `actor_id` parameter on all transition functions, recorded in the audit
+  event.
 
-**In scope (carried from v0.1):**
+**In scope (carried from v0.2):**
 - Person / Project / Milestone / Task / Evidence entities with JSON Schemas
 - SQLite persistence via `src/db.py`
-- Enforced task status transitions
+- Enforced task status transitions with evidence gates
 - Evidence submission and independent verification (no self-verification)
-- Lifecycle unit tests (20 tests, all passing)
+- `hrpm` CLI for project/task/evidence operations
+- JSON ↔ SQLite import/export with FK validation
+- Lifecycle unit tests (32 tests, all passing)
 
 **Explicitly out of scope:**
 - Payroll, benefits, or recruiting automation

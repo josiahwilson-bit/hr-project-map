@@ -9,6 +9,13 @@ Standard library only. Default database is ./hrpm.db (override with --db).
     hrpm task create --project PROJECT_ID --title TITLE [--assignee PERSON_ID] [--milestone MILESTONE_ID]
     hrpm task list --project PROJECT_ID
     hrpm evidence add --task TASK_ID --by PERSON_ID --type TYPE --ref REF
+    hrpm dashboard outstanding [--project PROJECT_ID]
+    hrpm dashboard submitted   [--project PROJECT_ID]
+    hrpm dashboard completed   [--project PROJECT_ID]
+    hrpm dashboard verified    [--project PROJECT_ID]
+
+Dashboard commands are read-only: they report database state and never
+modify it.
 """
 
 import argparse
@@ -17,7 +24,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src import db, evidence, milestones, projects, tasks
+from src import db, evidence, milestones, projects, queries, tasks
 
 
 def _short(uid):
@@ -103,6 +110,34 @@ def cmd_evidence_add(args):
           % (_short(eid), _short(args.task), before_status, t["status"]))
 
 
+_DASHBOARD_VIEWS = (
+    ("outstanding", queries.outstanding_tasks, "Outstanding (Proposed/Assigned/In Progress)"),
+    ("submitted", queries.submitted_tasks, "Submitted (awaiting completion)"),
+    ("completed", queries.completed_tasks, "Completed (evidence recorded, unverified)"),
+    ("verified", queries.verified_tasks, "Verified (independently verified)"),
+)
+
+
+def cmd_dashboard(args):
+    """Read-only status dashboard. Reports state; never modifies the DB."""
+    view = dict((name, (fn, label)) for name, fn, label in _DASHBOARD_VIEWS)
+    fn, label = view[args.action]
+    if args.project:
+        p = projects.get_project(args.db, args.project)
+        if not p:
+            raise ValueError("No project found with id %r." % args.project)
+        scope = "project %r" % p["name"]
+    else:
+        scope = "all projects"
+    rows = fn(args.db, args.project)
+    print("%s — %s (%d)" % (label, scope, len(rows)))
+    for t in rows:
+        assignee = _short(t["assignee_id"]) if t["assignee_id"] else "-"
+        print("  %s  %-28s  %-11s  assignee=%s  project=%s"
+              % (_short(t["id"]), t["title"][:28], t["status"], assignee,
+                 _short(t["project_id"])))
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="hrpm", description="HR-PM Map CLI — people, projects, tasks, evidence."
@@ -141,6 +176,13 @@ def build_parser():
     e_add.add_argument("--ref", required=True,
                        help="reference: path, URL, or note")
 
+    p_dash = sub.add_parser("dashboard", help="read-only status dashboards")
+    d_sub = p_dash.add_subparsers(dest="action", required=True)
+    for _name, _fn, _label in _DASHBOARD_VIEWS:
+        _d = d_sub.add_parser(_name, help="show %s tasks" % _name)
+        _d.add_argument("--project", default=None,
+                        help="limit to a project id")
+
     return parser
 
 
@@ -163,6 +205,8 @@ def main(argv=None):
         elif args.entity == "evidence":
             if args.action == "add":
                 cmd_evidence_add(args)
+        elif args.entity == "dashboard":
+            cmd_dashboard(args)
     except ValueError as exc:
         print("Error: %s" % exc, file=sys.stderr)
         return 1
