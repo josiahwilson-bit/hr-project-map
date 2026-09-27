@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hrpm — command-line interface for the HR-PM Map (v0.2).
+"""hrpm — command-line interface for the HR-PM Map (v0.4).
 
 Standard library only. Default database is ./hrpm.db (override with --db).
 
@@ -8,11 +8,20 @@ Standard library only. Default database is ./hrpm.db (override with --db).
     hrpm project show PROJECT_ID
     hrpm task create --project PROJECT_ID --title TITLE [--assignee PERSON_ID] [--milestone MILESTONE_ID]
     hrpm task list --project PROJECT_ID
+    hrpm task rework --task TASK_ID [--title TITLE] [--assignee PERSON_ID]
     hrpm evidence add --task TASK_ID --by PERSON_ID --type TYPE --ref REF
+    hrpm intake create --title TITLE --scope SCOPE --requester PERSON_ID [--description DESC]
+    hrpm intake list [--status STATUS]
+    hrpm intake approve INTAKE_ID --by PERSON_ID
+    hrpm intake reject INTAKE_ID --by PERSON_ID --reason REASON
+    hrpm review start --task TASK_ID --reviewer PERSON_ID
+    hrpm review accept --task TASK_ID --reviewer PERSON_ID [--note NOTE]
+    hrpm review reject --task TASK_ID --reviewer PERSON_ID --reason REASON
     hrpm dashboard outstanding [--project PROJECT_ID]
     hrpm dashboard submitted   [--project PROJECT_ID]
     hrpm dashboard completed   [--project PROJECT_ID]
     hrpm dashboard verified    [--project PROJECT_ID]
+    hrpm dashboard rejected    [--project PROJECT_ID]
 
 Dashboard commands are read-only: they report database state and never
 modify it.
@@ -24,7 +33,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src import db, evidence, milestones, projects, queries, tasks
+from src import db, evidence, intake, milestones, projects, queries, review, tasks
 
 
 def _short(uid):
@@ -110,11 +119,68 @@ def cmd_evidence_add(args):
           % (_short(eid), _short(args.task), before_status, t["status"]))
 
 
+def cmd_task_rework(args):
+    new_id = tasks.rework_task(
+        args.db, args.task, title=args.title, assignee_id=args.assignee,
+    )
+    print("Created rework task %s superseding %s"
+          % (_short(new_id), _short(args.task)))
+
+
+def cmd_intake_create(args):
+    iid = intake.create_intake(
+        args.db, args.title, args.scope, args.requester,
+        description=args.description,
+    )
+    print("Created intake %r (%s) [Pending]" % (args.title, _short(iid)))
+
+
+def cmd_intake_list(args):
+    rows = intake.list_intakes(args.db, status=args.status)
+    if not rows:
+        print("No intakes.")
+        return
+    for r in rows:
+        print("%s  %-28s  %-9s  requester=%s"
+              % (_short(r["id"]), r["title"][:28], r["status"],
+                 _short(r["requester_id"])))
+
+
+def cmd_intake_approve(args):
+    pid = intake.approve_intake(args.db, args.intake_id, args.by)
+    print("Approved intake %s -> project %s"
+          % (_short(args.intake_id), _short(pid)))
+
+
+def cmd_intake_reject(args):
+    intake.reject_intake(args.db, args.intake_id, args.by, args.reason)
+    print("Rejected intake %s" % _short(args.intake_id))
+
+
+def cmd_review_start(args):
+    review.start_review(args.db, args.task, args.reviewer)
+    print("Task %s is now Under Review (reviewer=%s)"
+          % (_short(args.task), _short(args.reviewer)))
+
+
+def cmd_review_accept(args):
+    review.accept_review(args.db, args.task, args.reviewer, note=args.note)
+    print("Review accepted for task %s (reviewer=%s)"
+          % (_short(args.task), _short(args.reviewer)))
+
+
+def cmd_review_reject(args):
+    review.reject_review(args.db, args.task, args.reviewer, args.reason)
+    print("Review rejected for task %s (reviewer=%s) — terminal"
+          % (_short(args.task), _short(args.reviewer)))
+
+
 _DASHBOARD_VIEWS = (
     ("outstanding", queries.outstanding_tasks, "Outstanding (Proposed/Assigned/In Progress)"),
-    ("submitted", queries.submitted_tasks, "Submitted (awaiting completion)"),
+    ("submitted", queries.submitted_tasks, "Submitted/Under Review (awaiting review decision)"),
     ("completed", queries.completed_tasks, "Completed (evidence recorded, unverified)"),
     ("verified", queries.verified_tasks, "Verified (independently verified)"),
+    ("rejected", queries.rejected_tasks, "Rejected (terminal; rework is a new task)"),
 )
 
 
@@ -166,6 +232,14 @@ def build_parser():
     t_create.add_argument("--milestone", default=None)
     t_list = t_sub.add_parser("list", help="list tasks of a project")
     t_list.add_argument("--project", required=True)
+    t_rework = t_sub.add_parser(
+        "rework", help="create a rework task for a rejected task")
+    t_rework.add_argument("--task", required=True,
+                          help="rejected task id to supersede")
+    t_rework.add_argument("--title", default=None,
+                          help="title for the new task (default: original + ' (rework)')")
+    t_rework.add_argument("--assignee", default=None,
+                          help="person id to assign the new task to")
 
     p_ev = sub.add_parser("evidence", help="evidence commands")
     e_sub = p_ev.add_subparsers(dest="action", required=True)
@@ -175,6 +249,48 @@ def build_parser():
     e_add.add_argument("--type", required=True, help="evidence type")
     e_add.add_argument("--ref", required=True,
                        help="reference: path, URL, or note")
+
+    p_in = sub.add_parser("intake", help="project intake commands")
+    i_sub = p_in.add_subparsers(dest="action", required=True)
+    i_create = i_sub.add_parser("create", help="stage a project request")
+    i_create.add_argument("--title", required=True)
+    i_create.add_argument("--scope", required=True,
+                          help="explicit scope of the requested work")
+    i_create.add_argument("--requester", required=True,
+                          help="person id of the requester")
+    i_create.add_argument("--description", default=None)
+    i_list = i_sub.add_parser("list", help="list intakes")
+    i_list.add_argument("--status", default=None,
+                        choices=["Pending", "Approved", "Rejected"])
+    i_approve = i_sub.add_parser(
+        "approve", help="approve an intake, creating one project")
+    i_approve.add_argument("intake_id")
+    i_approve.add_argument("--by", required=True,
+                           help="approver person id")
+    i_reject = i_sub.add_parser("reject", help="reject an intake")
+    i_reject.add_argument("intake_id")
+    i_reject.add_argument("--by", required=True,
+                          help="decider person id")
+    i_reject.add_argument("--reason", required=True,
+                          help="reason for rejection")
+
+    p_rev = sub.add_parser("review", help="human review commands")
+    r_sub = p_rev.add_subparsers(dest="action", required=True)
+    r_start = r_sub.add_parser("start", help="start review of submitted work")
+    r_start.add_argument("--task", required=True)
+    r_start.add_argument("--reviewer", required=True,
+                         help="reviewer person id")
+    r_accept = r_sub.add_parser("accept", help="accept reviewed work")
+    r_accept.add_argument("--task", required=True)
+    r_accept.add_argument("--reviewer", required=True,
+                          help="reviewer person id (must match review starter)")
+    r_accept.add_argument("--note", default=None)
+    r_reject = r_sub.add_parser("reject", help="reject reviewed work")
+    r_reject.add_argument("--task", required=True)
+    r_reject.add_argument("--reviewer", required=True,
+                          help="reviewer person id (must match review starter)")
+    r_reject.add_argument("--reason", required=True,
+                          help="reason for rejection")
 
     p_dash = sub.add_parser("dashboard", help="read-only status dashboards")
     d_sub = p_dash.add_subparsers(dest="action", required=True)
@@ -202,9 +318,27 @@ def main(argv=None):
                 cmd_task_create(args)
             elif args.action == "list":
                 cmd_task_list(args)
+            elif args.action == "rework":
+                cmd_task_rework(args)
         elif args.entity == "evidence":
             if args.action == "add":
                 cmd_evidence_add(args)
+        elif args.entity == "intake":
+            if args.action == "create":
+                cmd_intake_create(args)
+            elif args.action == "list":
+                cmd_intake_list(args)
+            elif args.action == "approve":
+                cmd_intake_approve(args)
+            elif args.action == "reject":
+                cmd_intake_reject(args)
+        elif args.entity == "review":
+            if args.action == "start":
+                cmd_review_start(args)
+            elif args.action == "accept":
+                cmd_review_accept(args)
+            elif args.action == "reject":
+                cmd_review_reject(args)
         elif args.entity == "dashboard":
             cmd_dashboard(args)
     except ValueError as exc:

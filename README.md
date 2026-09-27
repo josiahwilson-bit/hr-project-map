@@ -1,6 +1,6 @@
 # HR-PM Map — Human-Resource Project Management Map
 
-**Version:** 0.3.0
+**Version:** 0.4.0
 **License:** MIT
 **Purpose:** Open-source HR/project-management information architecture
 
@@ -17,11 +17,13 @@
 | JSON ↔ SQLite sync     | Present |
 | Audit trail            | Present |
 | Dashboard queries      | Present |
+| Project intake         | Present |
+| Human review workflow  | Present |
 | External integrations  | None    |
 | Production deployment  | None    |
 | HR automation          | None    |
 
-## Status register — v0.3.0
+## Status register — v0.4.0
 
 **IMPLEMENTATION**
 
@@ -30,15 +32,21 @@
 | Audit events    | IMPLEMENTED |
 | Dashboard queries | IMPLEMENTED |
 | CLI dashboard   | IMPLEMENTED |
+| Project intake  | IMPLEMENTED |
+| Human review    | IMPLEMENTED |
 
 **TEST**
 
-| Concern                  | State  |
-|--------------------------|--------|
-| Audit transition coverage | TESTED |
-| Append-only behavior      | TESTED |
-| Invalid transition        | TESTED |
-| Dashboard/query behavior  | TESTED |
+| Concern                      | State  |
+|------------------------------|--------|
+| Audit transition coverage     | TESTED |
+| Append-only behavior          | TESTED |
+| Invalid transition            | TESTED |
+| Dashboard/query behavior      | TESTED |
+| Intake validation             | TESTED |
+| Review transitions            | TESTED |
+| Terminal rejection            | TESTED |
+| Rework linkage                | TESTED |
 
 | Concern      | State           |
 |--------------|-----------------|
@@ -52,15 +60,16 @@
 A passing test demonstrates implemented behavior in the test environment; it
 does not establish production deployment or real-world verification.
 
-> The dashboard reports state; the audit trail records the transition;
-> neither one creates evidence of an event that did not occur.
+> Rejected is a recorded terminal outcome, not an invitation to rewrite
+> history. Rework creates a new task and preserves the relationship to the
+> original.
 
 This repository is the **source of truth for the information structure** —
-v0.3 adds accountability and visibility: every transition is audit-logged,
-and read-only dashboards report outstanding, submitted, completed, and
-verified work. Planned increments: `v0.4` basic web interface →
-`v0.5` human approval and evidence tracking →
-`v1.0` usable HR/project-management product.
+v0.4 answers one question: can a real organization submit a piece of work,
+have a human review it, and preserve an auditable record of that decision?
+Intake stages structured project requests; human review gates submitted work
+before completion; every decision is audit-logged. Planned increments:
+`v0.5` basic web interface → `v1.0` usable HR/project-management product.
 
 A single source-of-truth map for **people, projects, and obligations** — the
 foundational data layer for human-resource and project-management workflows.
@@ -70,11 +79,15 @@ foundational data layer for human-resource and project-management workflows.
 Every piece of work in an organization follows one backbone:
 
 ```
+Intake
+  ↓
 Person
   ↓
 Responsibility
   ↓
 Project
+  ↓
+Milestone
   ↓
 Task
   ↓
@@ -82,29 +95,46 @@ Deliverable
   ↓
 Evidence
   ↓
+Review (Under Review → Accepted | Rejected)
+  ↓
 Verification
   ↓
 Completion
 ```
 
-A **Person** takes **Responsibility** for a **Project**. The project breaks into
-**Tasks**. Each task produces a **Deliverable**, backed by **Evidence**, which a
-different person **Verifies**. Verified work reaches **Completion**.
+A structured **Intake** (explicit requester, explicit scope) becomes a
+**Project** on approval. A **Person** takes **Responsibility** for the
+project, which breaks into **Milestones** and **Tasks**. Each task produces
+a **Deliverable**, backed by **Evidence**. Submitted work enters human
+**Review**: a named reviewer **Accepts** it (forward to completion) or
+**Rejects** it — Rejected is terminal; rework is a new task referencing the
+original. Accepted work with evidence reaches **Completion**; independently
+verified work reaches **Verification**.
 
-v0.2 models exactly this chain — nothing more. No payroll, no recruiting
+v0.4 models exactly this chain — nothing more. No payroll, no recruiting
 automation, no AI orchestration, no cloud services. Just a clean, local,
 auditable data map you can run for free.
 
-## Task lifecycle (v0.3)
+## Task lifecycle (v0.4)
 
 ```
-Proposed → Assigned → In Progress → Submitted → Completed → Verified
+Proposed → Assigned → In Progress → Submitted → Under Review → Accepted → Completed → Verified
+                                              ↘ Rejected (TERMINAL)
 ```
 
 The only backward move allowed is `Assigned → Proposed` (un-assigning work).
+`Rejected` has no outgoing transitions: a rejected task can never be
+reopened — rework is a new task whose `supersedes_task_id` points at the
+original.
 
 ### Task state rules
 
+- **Under Review** requires a reviewer: only `Submitted` tasks enter review,
+  and the reviewer must be an existing, active person.
+- **Accepted / Rejected** require the deciding reviewer to be the one who
+  started the review. Rejection additionally requires a recorded reason.
+- **Accepted**, **Completed**, and **Verified** are three separate facts:
+  acceptance is not completion, and completion is not verification.
 - **Completed** requires evidence: a task cannot be marked Completed unless
   at least one evidence record exists for it.
 - **Verified** requires evidence + verifier: a task cannot be marked Verified
@@ -112,8 +142,11 @@ The only backward move allowed is `Assigned → Proposed` (un-assigning work).
 
 ### Integrity rules
 
+- No reviewer → no review decision.
+- No rejection reason → rejection refused.
 - No evidence → cannot become Completed.
 - No verifier → cannot become Verified.
+- Rejected → cannot be reopened; rework creates a new task.
 - Missing referenced entity → operation refused.
 - Invalid transition → operation refused.
 - No synthetic evidence generation: the system records what happened; it
@@ -154,18 +187,20 @@ tasks.assign_task('hrpm.db', t, worker)                 # Proposed -> Assigned
 tasks.update_task_status('hrpm.db', t, 'In Progress')   # Assigned -> In Progress
 print('task ready for work:', t)"
 
-# 5. Submit evidence and complete the task (evidence-gated)
+# 5. Submit evidence, review, complete, and verify (all gates enforced)
 python3 -c "
-from src import people, projects, tasks, evidence, completion
+from src import people, projects, tasks, evidence, review, completion
 mgr = [p for p in people.list_people('hrpm.db') if p['role'] == 'Manager'][0]['id']
 worker = [p for p in people.list_people('hrpm.db') if p['role'] == 'Employee'][0]['id']
 prj = projects.list_projects('hrpm.db')[0]['id']
 t = tasks.list_tasks_by_project('hrpm.db', prj)[0]['id']
 e = evidence.submit_evidence('hrpm.db', t, submitted_by=worker,
                              evidence_type='document', url_or_path='docs/checklist-v1.md')
-completion.complete_task('hrpm.db', t)            # Submitted -> Completed (evidence exists)
+review.start_review('hrpm.db', t, mgr)        # Submitted -> Under Review
+review.accept_review('hrpm.db', t, mgr, note='meets spec')  # -> Accepted
+completion.complete_task('hrpm.db', t)        # Accepted -> Completed (evidence exists)
 evidence.verify_evidence('hrpm.db', e, verified_by=mgr)  # manager != worker
-completion.verify_task('hrpm.db', t, mgr)         # Completed -> Verified
+completion.verify_task('hrpm.db', t, mgr)     # Completed -> Verified
 print('task verified:', tasks.get_task('hrpm.db', t)['status'])"
 ```
 
@@ -176,17 +211,24 @@ A cleaner end-to-end script:
 python3 -m unittest discover -s tests -v
 ```
 
-## CLI usage (v0.3)
+## CLI usage (v0.4)
 
 The `hrpm` script (repo root, stdlib only) wraps the common operations.
 Default database is `./hrpm.db`; override with `--db PATH`.
 
 ```bash
-# People are added via Python (no CLI command yet in v0.3)
+# People are added via Python (no CLI command yet in v0.4)
 python3 -c "
 from src import db, people
 db.init_db('hrpm.db')
 print(people.add_person('hrpm.db', 'Jane Doe', 'Manager'))"
+
+# Intake: stage a structured project request, then decide it
+./hrpm intake create --title "Portal refresh" --scope "Redesign login pages" \
+    --requester <PERSON_ID> --description "Q4 ask"
+./hrpm intake list [--status Pending|Approved|Rejected]
+./hrpm intake approve <INTAKE_ID> --by <PERSON_ID>   # creates exactly one project
+./hrpm intake reject <INTAKE_ID> --by <PERSON_ID> --reason "Out of scope"
 
 # Projects
 ./hrpm project create --name "Website" --owner <PERSON_ID> --description "New site"
@@ -196,20 +238,27 @@ print(people.add_person('hrpm.db', 'Jane Doe', 'Manager'))"
 # Tasks
 ./hrpm task create --project <PROJECT_ID> --title "Write copy" --assignee <PERSON_ID>
 ./hrpm task list --project <PROJECT_ID>
+./hrpm task rework --task <REJECTED_TASK_ID> [--title "New title"] [--assignee <PERSON_ID>]
 
 # Evidence (task must be In Progress; moves it to Submitted)
 ./hrpm evidence add --task <TASK_ID> --by <PERSON_ID> --type document --ref docs/copy.md
+
+# Human review (task must be Submitted; reviewer must be active)
+./hrpm review start  --task <TASK_ID> --reviewer <PERSON_ID>   # -> Under Review
+./hrpm review accept --task <TASK_ID> --reviewer <PERSON_ID> [--note "meets spec"]
+./hrpm review reject --task <TASK_ID> --reviewer <PERSON_ID> --reason "does not match spec"
 ```
 
-### Dashboard (v0.3, read-only)
+### Dashboard (v0.4, read-only)
 
 Dashboard commands report database state and never modify it:
 
 ```bash
-./hrpm dashboard outstanding [--project <PROJECT_ID>]
-./hrpm dashboard submitted   [--project <PROJECT_ID>]
-./hrpm dashboard completed   [--project <PROJECT_ID>]
-./hrpm dashboard verified    [--project <PROJECT_ID>]
+./hrpm dashboard outstanding [--project <PROJECT_ID>]  # Proposed/Assigned/In Progress
+./hrpm dashboard submitted   [--project <PROJECT_ID>]  # Submitted/Under Review
+./hrpm dashboard completed   [--project <PROJECT_ID>]  # Completed (evidence, unverified)
+./hrpm dashboard verified    [--project <PROJECT_ID>]  # Verified (independently verified)
+./hrpm dashboard rejected    [--project <PROJECT_ID>]  # Rejected (terminal)
 ```
 
 ### Audit trail (v0.3)
@@ -227,7 +276,7 @@ for e in audit.get_events('hrpm.db', 'task', '<TASK_ID>'):
     print(e['prev_state'], '->', e['new_state'], 'by', e['actor_id'], e['timestamp'])"
 ```
 
-Completion and verification stay in Python for v0.2 (they are judgment
+Completion and verification stay in Python for v0.4 (they are judgment
 calls, not data entry):
 
 ```bash
@@ -258,7 +307,7 @@ hr-project-map/
 ├── README.md            # This file
 ├── LICENSE              # MIT
 ├── .gitignore
-├── hrpm                 # CLI: project/task/evidence/dashboard commands (v0.3)
+├── hrpm                 # CLI: intake/review/project/task/evidence/dashboard (v0.4)
 ├── docs/
 │   ├── architecture.md  # Data model and entity definitions
 │   ├── workflow.md      # Lifecycle stages and responsibilities
@@ -268,17 +317,21 @@ hr-project-map/
 │   ├── project.schema.json
 │   ├── milestone.schema.json
 │   ├── task.schema.json
-│   └── evidence.schema.json
+│   ├── evidence.schema.json
+│   └── intake.schema.json
 ├── data/                # Seed JSON files (empty; examples in comments)
 │   ├── people.json
 │   ├── projects.json
 │   ├── milestones.json
 │   ├── tasks.json
-│   └── evidence.json
+│   ├── evidence.json
+│   └── intakes.json
 ├── src/                 # Python implementation (stdlib only)
 │   ├── db.py            # SQLite schema + init_db()
 │   ├── audit.py         # Append-only audit trail (v0.3)
-│   ├── queries.py       # Read-only dashboard queries (v0.3)
+│   ├── queries.py       # Read-only dashboard queries (v0.4)
+│   ├── intake.py        # Structured project intake (v0.4)
+│   ├── review.py        # Human review workflow (v0.4)
 │   ├── people.py        # Person CRUD
 │   ├── projects.py      # Project CRUD + status
 │   ├── milestones.py    # Milestone CRUD + forward-only transitions
@@ -289,29 +342,39 @@ hr-project-map/
 └── tests/
     ├── test_workflow.py # Full lifecycle test on a temp database
     ├── test_v02.py      # Evidence gates, milestones, sync, transition order
-    └── test_v03.py      # Audit trail + dashboard queries (v0.3)
+    ├── test_v03.py      # Audit trail + dashboard queries (v0.3)
+    └── test_v04.py      # Intake + human review workflow (v0.4)
 ```
 
-## v0.3 scope
+## v0.4 scope
 
-**Added in v0.3:**
-- Append-only audit events (`src/audit.py`, `audit_events` table): one event
-  per accepted transition — entity, prev/new state, actor, UTC timestamp.
-  Refused transitions emit no event; no update/delete API exists.
-- Read-only dashboard/query layer (`src/queries.py`): outstanding,
-  submitted, completed, verified task views + per-project summary.
-- `hrpm dashboard` CLI commands (read-only; report state, never modify it).
-- `actor_id` parameter on all transition functions, recorded in the audit
-  event.
+**Added in v0.4:**
+- Structured project intake (`src/intake.py`, `intakes` table): explicit
+  requester, explicit scope, required fields, staged `Pending` state;
+  approval creates exactly one project; re-approval refused; rejection
+  requires a reason.
+- Human review workflow (`src/review.py`, `reviews` table):
+  `Submitted → Under Review → Accepted → Completed → Verified`, with
+  `Under Review → Rejected` as a terminal branch.
+- Review integrity rules: reviewer required and recorded on the task; only
+  the reviewing reviewer can accept or reject; rejection requires a reason;
+  acceptance emits an audit event; completion requires evidence;
+  verification requires evidence plus an independent verifier.
+- Rework as lineage, not rewriting: `tasks.rework_task()` creates a new
+  task whose `supersedes_task_id` references the rejected original, which
+  is left untouched and unreopenable.
+- `hrpm intake create/list/approve/reject`, `hrpm review start/accept/reject`,
+  `hrpm task rework`, and `hrpm dashboard rejected`.
 
-**In scope (carried from v0.2):**
+**In scope (carried from v0.3):**
 - Person / Project / Milestone / Task / Evidence entities with JSON Schemas
 - SQLite persistence via `src/db.py`
 - Enforced task status transitions with evidence gates
 - Evidence submission and independent verification (no self-verification)
 - `hrpm` CLI for project/task/evidence operations
 - JSON ↔ SQLite import/export with FK validation
-- Lifecycle unit tests (32 tests, all passing)
+- Append-only audit trail and read-only dashboard queries
+- Lifecycle unit tests (49 tests, all passing)
 
 **Explicitly out of scope:**
 - Payroll, benefits, or recruiting automation
