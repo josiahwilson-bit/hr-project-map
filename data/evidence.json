@@ -1,0 +1,14 @@
+[
+  // Example entry (remove the comment lines before parsing as strict JSON):
+  // {
+  //   "id": "e5f6a7b8c9d0",
+  //   "task_id": "c3d4e5f6a7b8",
+  //   "submitted_by": "d4e5f6a7b8c9",
+  //   "evidence_type": "document",
+  //   "url_or_path": "docs/checklist-v1.md",
+  //   "submitted_at": "2026-09-28T14:30:00+00:00",
+  //   "verified_by": "a1b2c3d4e5f6",
+  //   "verified_at": "2026-09-28T16:00:00+00:00"
+  // }
+  // verified_by must differ from submitted_by (no self-verification)
+]
