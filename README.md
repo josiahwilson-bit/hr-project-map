@@ -1,3 +1,5 @@
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/josiahwilson-bit/hr-project-map)
+
 # HR-PM Map — Human-Resource Project Management Map
 
 **Version:** 0.4.0
