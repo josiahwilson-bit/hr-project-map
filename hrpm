@@ -196,7 +196,7 @@ def cmd_dashboard(args):
     else:
         scope = "all projects"
     rows = fn(args.db, args.project)
-    print("%s — %s (%d)" % (label, scope, len(rows)))
+    print(f"{label} — {scope} ({len(rows)})")
     for t in rows:
         assignee = _short(t["assignee_id"]) if t["assignee_id"] else "-"
         print("  %s  %-28s  %-11s  assignee=%s  project=%s"
