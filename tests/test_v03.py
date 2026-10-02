@@ -16,8 +16,18 @@ import unittest
 # Make `src` importable when running `python -m unittest discover -s tests`.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src import (audit, completion, db, evidence, milestones, people,
-                 projects, queries, review, tasks)
+from src import (
+    audit,
+    completion,
+    db,
+    evidence,
+    milestones,
+    people,
+    projects,
+    queries,
+    review,
+    tasks,
+)
 
 
 class AuditTrailTest(unittest.TestCase):
@@ -70,7 +80,7 @@ class AuditTrailTest(unittest.TestCase):
         self.assertTrue(ev["event_id"])
 
     def test_invalid_transition_emits_no_event(self):
-        manager, worker, project = self._make_people_and_project()
+        _manager, worker, project = self._make_people_and_project()
         task = tasks.add_task(self.db_path, project, "Write docs")
         # Proposed -> In Progress is not allowed (must go via Assigned).
         with self.assertRaises(ValueError):
@@ -95,7 +105,7 @@ class AuditTrailTest(unittest.TestCase):
         for forbidden in ("update_event", "delete_event", "remove_event",
                           "clear_events", "modify_event"):
             self.assertFalse(hasattr(audit, forbidden),
-                             "audit module must not expose %r" % forbidden)
+                             f"audit module must not expose {forbidden!r}")
 
     def test_refused_completion_emits_no_event(self):
         manager, worker, project = self._make_people_and_project()
@@ -103,7 +113,7 @@ class AuditTrailTest(unittest.TestCase):
         tasks.assign_task(self.db_path, task, worker, actor_id=worker)
         tasks.update_task_status(self.db_path, task, "In Progress",
                                  actor_id=worker)
-        eid = evidence.submit_evidence(
+        evidence.submit_evidence(
             self.db_path, task, submitted_by=worker,
             evidence_type="document", url_or_path="/tmp/docs.pdf",
         )
@@ -139,7 +149,7 @@ class AuditTrailTest(unittest.TestCase):
         self.assertEqual(audit.count_events(self.db_path), n_before)
 
     def test_milestone_and_project_transitions_are_audited(self):
-        manager, worker, project = self._make_people_and_project()
+        manager, _worker, project = self._make_people_and_project()
         ms = milestones.add_milestone(self.db_path, project, "Phase 1")
         milestones.update_milestone_status(self.db_path, ms, "Assigned",
                                           actor_id=manager)

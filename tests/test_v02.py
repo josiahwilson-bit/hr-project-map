@@ -13,7 +13,17 @@ import unittest
 # Make `src` importable when running `python -m unittest discover -s tests`.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src import completion, db, evidence, milestones, people, projects, review, sync, tasks
+from src import (
+    completion,
+    db,
+    evidence,
+    milestones,
+    people,
+    projects,
+    review,
+    sync,
+    tasks,
+)
 
 
 class EvidenceGatesTest(unittest.TestCase):
@@ -64,7 +74,7 @@ class EvidenceGatesTest(unittest.TestCase):
         review.accept_review(self.db_path, task, verifier)
 
     def test_task_cannot_complete_without_evidence(self):
-        manager, worker, project = self._make_people_and_project()
+        _manager, worker, project = self._make_people_and_project()
         task = self._task_in_progress(project, worker)
         self._force_accepted_without_evidence(task)
 
@@ -282,12 +292,12 @@ class SyncTest(unittest.TestCase):
             for table in ("people", "projects", "milestones", "tasks",
                           "evidence"):
                 n1 = conn.execute(
-                    "SELECT COUNT(*) AS n FROM %s" % table
+                    f"SELECT COUNT(*) AS n FROM {table}"
                 ).fetchone()["n"]
                 n2 = conn2.execute(
-                    "SELECT COUNT(*) AS n FROM %s" % table
+                    f"SELECT COUNT(*) AS n FROM {table}"
                 ).fetchone()["n"]
-                self.assertEqual(n1, n2, "row count mismatch for %s" % table)
+                self.assertEqual(n1, n2, f"row count mismatch for {table}")
             # Spot-check a linked record survived the round trip.
             t1 = conn.execute(
                 "SELECT title, milestone_id FROM tasks"

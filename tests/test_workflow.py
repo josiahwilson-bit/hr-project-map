@@ -9,7 +9,7 @@ import unittest
 # Make `src` importable when running `python -m unittest discover -s tests`.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src import audit, completion, db, evidence, people, projects, review, tasks
+from src import completion, db, evidence, people, projects, review, tasks
 
 
 class WorkflowTest(unittest.TestCase):
@@ -107,7 +107,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_self_verification_rejected(self):
         """The verifier must be a different person than the submitter."""
-        manager, worker, project = self._make_people_and_project()
+        _manager, worker, project = self._make_people_and_project()
         task = tasks.add_task(self.db_path, project, "Write docs")
         tasks.assign_task(self.db_path, task, worker)
         tasks.update_task_status(self.db_path, task, "In Progress")
@@ -126,7 +126,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_invalid_transitions_rejected(self):
         """Skipping stages or moving backward (except un-assign) fails."""
-        manager, worker, project = self._make_people_and_project()
+        _manager, worker, project = self._make_people_and_project()
         task = tasks.add_task(self.db_path, project, "Write docs")
 
         # Cannot skip: Proposed -> Completed
@@ -148,7 +148,7 @@ class WorkflowTest(unittest.TestCase):
 
         # v0.4: review is mandatory — Submitted cannot jump to Completed,
         # Accepted, or Verified without going Under Review first.
-        ev = evidence.submit_evidence(
+        evidence.submit_evidence(
             self.db_path, task, worker, "note", "done"
         )
         for skipped in ("Completed", "Accepted", "Verified", "Rejected"):
@@ -161,7 +161,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_assigned_to_proposed_allowed(self):
         """Un-assigning (Assigned -> Proposed) is the one legal backward move."""
-        manager, worker, project = self._make_people_and_project()
+        _manager, worker, project = self._make_people_and_project()
         task = tasks.add_task(self.db_path, project, "Write docs")
         tasks.assign_task(self.db_path, task, worker)
         tasks.update_task_status(self.db_path, task, "Proposed")
@@ -171,7 +171,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_assign_requires_active_person(self):
         """Inactive people cannot be assigned tasks."""
-        manager, worker, project = self._make_people_and_project()
+        _manager, worker, project = self._make_people_and_project()
         people.set_active(self.db_path, worker, False)
         task = tasks.add_task(self.db_path, project, "Write docs")
         with self.assertRaises(ValueError):
@@ -179,7 +179,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_submit_evidence_requires_in_progress(self):
         """Evidence can only be submitted for work that has started."""
-        manager, worker, project = self._make_people_and_project()
+        _manager, worker, project = self._make_people_and_project()
         task = tasks.add_task(self.db_path, project, "Write docs")
         with self.assertRaises(ValueError):
             evidence.submit_evidence(
@@ -188,7 +188,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_project_status_update(self):
         """Project status accepts any lifecycle stage and rejects junk."""
-        manager, worker, project = self._make_people_and_project()
+        _manager, _worker, project = self._make_people_and_project()
         projects.update_project_status(self.db_path, project, "In Progress")
         self.assertEqual(
             projects.get_project(self.db_path, project)["status"], "In Progress"
@@ -198,7 +198,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_list_tasks_by_project(self):
         """Tasks are listed per project."""
-        manager, worker, project = self._make_people_and_project()
+        manager, _worker, project = self._make_people_and_project()
         other = projects.add_project(
             self.db_path, "Other", owner_id=manager
         )

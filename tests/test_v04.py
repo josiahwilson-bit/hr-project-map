@@ -22,8 +22,18 @@ import unittest
 # Make `src` importable when running `python -m unittest discover -s tests`.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src import (audit, completion, db, evidence, intake, people, projects,
-                 queries, review, tasks)
+from src import (
+    audit,
+    completion,
+    db,
+    evidence,
+    intake,
+    people,
+    projects,
+    queries,
+    review,
+    tasks,
+)
 
 
 class IntakeTest(unittest.TestCase):
@@ -364,7 +374,7 @@ class ReviewWorkflowTest(unittest.TestCase):
         for forbidden in ("update_event", "delete_event", "remove_event",
                           "clear_events", "modify_event"):
             self.assertFalse(hasattr(audit, forbidden),
-                             "audit module must not expose %r" % forbidden)
+                             f"audit module must not expose {forbidden!r}")
 
     def test_dashboard_rejected_bucket(self):
         task, _eid = self._submitted_task_with_evidence("Doomed work")
