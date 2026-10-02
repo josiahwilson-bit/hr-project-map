@@ -22,10 +22,10 @@ def _require_active_person(conn, person_id, action):
         "SELECT id, active FROM people WHERE id = ?", (person_id,)
     ).fetchone()
     if not row:
-        raise ValueError("No person found with id %r." % person_id)
+        raise ValueError(f"No person found with id {person_id!r}.")
     if not row["active"]:
         raise ValueError(
-            "Person %r is inactive and cannot %s." % (person_id, action)
+            f"Person {person_id!r} is inactive and cannot {action}."
         )
 
 
@@ -34,7 +34,7 @@ def _get_intake_row(conn, intake_id):
         "SELECT * FROM intakes WHERE id = ?", (intake_id,)
     ).fetchone()
     if not row:
-        raise ValueError("No intake found with id %r." % intake_id)
+        raise ValueError(f"No intake found with id {intake_id!r}.")
     return row
 
 
@@ -84,8 +84,7 @@ def list_intakes(db_path, status=None):
     """List intakes, optionally filtered by status. Oldest first."""
     if status is not None and status not in INTAKE_STATUSES:
         raise ValueError(
-            "Invalid intake status %r. Must be one of %s."
-            % (status, list(INTAKE_STATUSES))
+            f"Invalid intake status {status!r}. Must be one of {list(INTAKE_STATUSES)}."
         )
     conn = connect(db_path)
     try:
@@ -117,8 +116,7 @@ def approve_intake(db_path, intake_id, approver_id):
         row = _get_intake_row(conn, intake_id)
         if row["status"] != "Pending":
             raise ValueError(
-                "Intake %r is already %r and cannot be approved."
-                % (intake_id, row["status"])
+                "Intake {!r} is already {!r} and cannot be approved.".format(intake_id, row["status"])
             )
         _require_active_person(conn, approver_id, "approve intakes")
         requester_id = row["requester_id"]
@@ -157,8 +155,7 @@ def reject_intake(db_path, intake_id, decided_by, reason):
         row = _get_intake_row(conn, intake_id)
         if row["status"] != "Pending":
             raise ValueError(
-                "Intake %r is already %r and cannot be rejected."
-                % (intake_id, row["status"])
+                "Intake {!r} is already {!r} and cannot be rejected.".format(intake_id, row["status"])
             )
         _require_active_person(conn, decided_by, "reject intakes")
         conn.execute(

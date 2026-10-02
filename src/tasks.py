@@ -27,7 +27,7 @@ from .db import connect, row_to_dict, validate_transition
 def _get_task_row(conn, task_id):
     row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if not row:
-        raise ValueError("No task found with id %r." % task_id)
+        raise ValueError(f"No task found with id {task_id!r}.")
     return row
 
 
@@ -56,10 +56,10 @@ def _require_active_person(conn, person_id, action):
         "SELECT id, active FROM people WHERE id = ?", (person_id,)
     ).fetchone()
     if not row:
-        raise ValueError("No person found with id %r." % person_id)
+        raise ValueError(f"No person found with id {person_id!r}.")
     if not row["active"]:
         raise ValueError(
-            "Person %r is inactive and cannot %s." % (person_id, action)
+            f"Person {person_id!r} is inactive and cannot {action}."
         )
 
 
@@ -81,7 +81,7 @@ def add_task(db_path, project_id, title, assignee_id=None, due_date=None,
             "SELECT id FROM projects WHERE id = ?", (project_id,)
         ).fetchone()
         if not project:
-            raise ValueError("No project found with id %r." % project_id)
+            raise ValueError(f"No project found with id {project_id!r}.")
         if milestone_id:
             ms = conn.execute(
                 "SELECT id, project_id FROM milestones WHERE id = ?",
@@ -89,12 +89,11 @@ def add_task(db_path, project_id, title, assignee_id=None, due_date=None,
             ).fetchone()
             if not ms:
                 raise ValueError(
-                    "No milestone found with id %r." % milestone_id
+                    f"No milestone found with id {milestone_id!r}."
                 )
             if ms["project_id"] != project_id:
                 raise ValueError(
-                    "Milestone %r belongs to project %r, not %r."
-                    % (milestone_id, ms["project_id"], project_id)
+                    "Milestone {!r} belongs to project {!r}, not {!r}.".format(milestone_id, ms["project_id"], project_id)
                 )
         if supersedes_task_id:
             orig = conn.execute(
@@ -103,8 +102,7 @@ def add_task(db_path, project_id, title, assignee_id=None, due_date=None,
             ).fetchone()
             if not orig:
                 raise ValueError(
-                    "No task found with id %r (supersedes_task_id)."
-                    % supersedes_task_id
+                    f"No task found with id {supersedes_task_id!r} (supersedes_task_id)."
                 )
         status = "Proposed"
         if assignee_id:
@@ -166,14 +164,14 @@ def assign_task(db_path, task_id, assignee_id, actor_id=None):
         if current == "Proposed":
             validate_transition(current, "Assigned")
             new_status = "Assigned"
-            note = "assigned to %s" % assignee_id
+            note = f"assigned to {assignee_id}"
         elif current == "Assigned":
             new_status = "Assigned"  # reassignment, no status change
-            note = "reassigned to %s" % assignee_id
+            note = f"reassigned to {assignee_id}"
         else:
             raise ValueError(
-                "Cannot assign task in status %r. Only Proposed or Assigned"
-                " tasks can be assigned." % current
+                f"Cannot assign task in status {current!r}. Only Proposed or Assigned"
+                " tasks can be assigned."
             )
         conn.execute(
             "UPDATE tasks SET assignee_id = ?, status = ? WHERE id = ?",
@@ -215,16 +213,16 @@ def update_task_status(db_path, task_id, new_status, actor_id=None):
         validate_transition(current, new_status)
         if new_status == "Completed" and not _has_evidence(conn, task_id):
             raise ValueError(
-                "cannot complete task without evidence: task %r has no"
-                " evidence records" % task_id
+                f"cannot complete task without evidence: task {task_id!r} has no"
+                " evidence records"
             )
         if new_status == "Verified" and not _has_independent_verification(
             conn, task_id
         ):
             raise ValueError(
                 "cannot verify task without independent verification:"
-                " task %r has no evidence verified by someone other than"
-                " its submitter" % task_id
+                f" task {task_id!r} has no evidence verified by someone other than"
+                " its submitter"
             )
         conn.execute(
             "UPDATE tasks SET status = ? WHERE id = ?", (new_status, task_id)
@@ -255,8 +253,7 @@ def rework_task(db_path, original_task_id, title=None, assignee_id=None,
         row = _get_task_row(conn, original_task_id)
         if row["status"] != "Rejected":
             raise ValueError(
-                "Rework is only allowed for Rejected tasks; task %r is %r."
-                % (original_task_id, row["status"])
+                "Rework is only allowed for Rejected tasks; task {!r} is {!r}.".format(original_task_id, row["status"])
             )
         project_id = row["project_id"]
         milestone_id = row["milestone_id"]

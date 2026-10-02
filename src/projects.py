@@ -18,7 +18,7 @@ def add_project(db_path, name, description=None, owner_id=None, status="Proposed
         raise ValueError("owner_id is required: every project needs an owner")
     if status not in TASK_STATUSES:
         raise ValueError(
-            "Invalid status %r. Must be one of %s." % (status, list(TASK_STATUSES))
+            f"Invalid status {status!r}. Must be one of {list(TASK_STATUSES)}."
         )
     conn = connect(db_path)
     try:
@@ -26,7 +26,7 @@ def add_project(db_path, name, description=None, owner_id=None, status="Proposed
             "SELECT id FROM people WHERE id = ?", (owner_id,)
         ).fetchone()
         if not owner:
-            raise ValueError("No person found with id %r." % owner_id)
+            raise ValueError(f"No person found with id {owner_id!r}.")
         project_id = uuid.uuid4().hex
         conn.execute(
             "INSERT INTO projects (id, name, description, owner_id, status, created_at)"
@@ -73,8 +73,7 @@ def update_project_status(db_path, project_id, new_status, actor_id=None):
     """
     if new_status not in TASK_STATUSES:
         raise ValueError(
-            "Invalid status %r. Must be one of %s."
-            % (new_status, list(TASK_STATUSES))
+            f"Invalid status {new_status!r}. Must be one of {list(TASK_STATUSES)}."
         )
     conn = connect(db_path)
     try:
@@ -82,7 +81,7 @@ def update_project_status(db_path, project_id, new_status, actor_id=None):
             "SELECT status FROM projects WHERE id = ?", (project_id,)
         ).fetchone()
         if not row:
-            raise ValueError("No project found with id %r." % project_id)
+            raise ValueError(f"No project found with id {project_id!r}.")
         current = row["status"]
         if new_status == current:
             return  # idempotent: already there, nothing to record

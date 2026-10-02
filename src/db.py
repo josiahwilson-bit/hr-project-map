@@ -263,11 +263,11 @@ def validate_transition(current, new):
     """
     if new not in TASK_STATUSES:
         raise ValueError(
-            "Unknown status %r. Must be one of %s." % (new, list(TASK_STATUSES))
+            f"Unknown status {new!r}. Must be one of {list(TASK_STATUSES)}."
         )
     if new not in ALLOWED_TRANSITIONS.get(current, set()):
         raise ValueError(
-            "Invalid status transition: %r -> %r." % (current, new)
+            f"Invalid status transition: {current!r} -> {new!r}."
         )
 
 

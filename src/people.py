@@ -14,7 +14,7 @@ def add_person(db_path, name, role, email=None, active=True):
         raise ValueError("name is required")
     if role not in PERSON_ROLES:
         raise ValueError(
-            "Invalid role %r. Must be one of %s." % (role, list(PERSON_ROLES))
+            f"Invalid role {role!r}. Must be one of {list(PERSON_ROLES)}."
         )
     person_id = uuid.uuid4().hex
     conn = connect(db_path)
@@ -68,6 +68,6 @@ def set_active(db_path, person_id, active):
         )
         conn.commit()
         if cur.rowcount == 0:
-            raise ValueError("No person found with id %r." % person_id)
+            raise ValueError(f"No person found with id {person_id!r}.")
     finally:
         conn.close()

@@ -22,7 +22,7 @@ def _get_milestone_row(conn, milestone_id):
         "SELECT * FROM milestones WHERE id = ?", (milestone_id,)
     ).fetchone()
     if not row:
-        raise ValueError("No milestone found with id %r." % milestone_id)
+        raise ValueError(f"No milestone found with id {milestone_id!r}.")
     return row
 
 
@@ -39,7 +39,7 @@ def add_milestone(db_path, project_id, name, description=None, due_date=None):
             "SELECT id FROM projects WHERE id = ?", (project_id,)
         ).fetchone()
         if not project:
-            raise ValueError("No project found with id %r." % project_id)
+            raise ValueError(f"No project found with id {project_id!r}.")
         milestone_id = uuid.uuid4().hex
         conn.execute(
             "INSERT INTO milestones (id, project_id, name, description,"
@@ -91,8 +91,7 @@ def update_milestone_status(db_path, milestone_id, new_status, actor_id=None):
     """
     if new_status not in MILESTONE_STATUSES:
         raise ValueError(
-            "Unknown status %r. Must be one of %s."
-            % (new_status, list(MILESTONE_STATUSES))
+            f"Unknown status {new_status!r}. Must be one of {list(MILESTONE_STATUSES)}."
         )
     conn = connect(db_path)
     try:
@@ -102,8 +101,7 @@ def update_milestone_status(db_path, milestone_id, new_status, actor_id=None):
             return  # idempotent: already there, nothing to record
         if new_status not in MILESTONE_TRANSITIONS.get(current, set()):
             raise ValueError(
-                "Invalid milestone status transition: %r -> %r."
-                % (current, new_status)
+                f"Invalid milestone status transition: {current!r} -> {new_status!r}."
             )
         conn.execute(
             "UPDATE milestones SET status = ? WHERE id = ?",

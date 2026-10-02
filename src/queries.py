@@ -22,10 +22,12 @@ def _tasks_by_statuses(db_path, statuses, project_id=None):
     conn = connect(db_path)
     try:
         placeholders = ", ".join("?" for _ in statuses)
+        # nosec B608: `placeholders` is a string of "?" bind markers only;
+        # the actual values are bound via `params` below. No SQL injection.
         sql = (
             "SELECT t.*, p.name AS project_name FROM tasks t"
             " JOIN projects p ON p.id = t.project_id"
-            " WHERE t.status IN (%s)" % placeholders
+            f" WHERE t.status IN ({placeholders})"  # nosec B608
         )
         params = list(statuses)
         if project_id is not None:
@@ -84,7 +86,7 @@ def project_summary(db_path, project_id):
             (project_id,),
         ).fetchone()
         if not project:
-            raise ValueError("No project found with id %r." % project_id)
+            raise ValueError(f"No project found with id {project_id!r}.")
         status_rows = conn.execute(
             "SELECT status, COUNT(*) AS n FROM tasks"
             " WHERE project_id = ? GROUP BY status",

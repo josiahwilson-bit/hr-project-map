@@ -38,8 +38,7 @@ def log_event(db_path, entity_type, entity_id, prev_state, new_state,
     """
     if entity_type not in ENTITY_TYPES:
         raise ValueError(
-            "Unknown entity_type %r. Must be one of %s."
-            % (entity_type, list(ENTITY_TYPES))
+            f"Unknown entity_type {entity_type!r}. Must be one of {list(ENTITY_TYPES)}."
         )
     if not entity_id:
         raise ValueError("entity_id is required")
@@ -48,13 +47,14 @@ def log_event(db_path, entity_type, entity_id, prev_state, new_state,
     conn = connect(db_path)
     try:
         table = _TABLE_BY_ENTITY[entity_type]
+        # nosec B608: `table` is drawn from the fixed _TABLE_BY_ENTITY
+        # mapping and `entity_type` was validated against ENTITY_TYPES above.
         exists = conn.execute(
-            "SELECT id FROM %s WHERE id = ?" % table, (entity_id,)
+            f"SELECT id FROM {table} WHERE id = ?", (entity_id,)  # nosec B608
         ).fetchone()
         if not exists:
             raise ValueError(
-                "Cannot audit %s %r: no such %s."
-                % (entity_type, entity_id, entity_type)
+                f"Cannot audit {entity_type} {entity_id!r}: no such {entity_type}."
             )
         if actor_id is not None:
             person = conn.execute(
@@ -62,7 +62,7 @@ def log_event(db_path, entity_type, entity_id, prev_state, new_state,
             ).fetchone()
             if not person:
                 raise ValueError(
-                    "Cannot audit with unknown actor %r." % actor_id
+                    f"Cannot audit with unknown actor {actor_id!r}."
                 )
         event_id = uuid.uuid4().hex
         conn.execute(
@@ -85,8 +85,7 @@ def get_events(db_path, entity_type=None, entity_id=None):
     """
     if entity_type is not None and entity_type not in ENTITY_TYPES:
         raise ValueError(
-            "Unknown entity_type %r. Must be one of %s."
-            % (entity_type, list(ENTITY_TYPES))
+            f"Unknown entity_type {entity_type!r}. Must be one of {list(ENTITY_TYPES)}."
         )
     conn = connect(db_path)
     try:

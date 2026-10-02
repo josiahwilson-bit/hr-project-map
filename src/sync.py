@@ -26,6 +26,15 @@ _TABLES = (
     ("reviews", "reviews.json"),
 )
 
+_KNOWN_TABLES = frozenset(name for name, _ in _TABLES)
+
+
+def _checked_table(table):
+    """Return ``table`` if it is a known entity table, else raise."""
+    if table not in _KNOWN_TABLES:
+        raise ValueError(f"Unknown table {table!r}.")
+    return table
+
 
 def _strip_comment_lines(text):
     """Drop ``//`` full-line comments so the JSONC-style seed files in
@@ -40,16 +49,18 @@ def _load_array(path):
     with open(path, "r", encoding="utf-8") as f:
         data = json.loads(_strip_comment_lines(f.read()))
     if not isinstance(data, list):
-        raise ValueError(
-            "Expected a JSON array in %r, got %s."
-            % (path, type(data).__name__)
+        raise TypeError(
+            f"Expected a JSON array in {path!r}, got {type(data).__name__}."
         )
     return data
 
 
 def _exists(conn, table, record_id):
+    _checked_table(table)
+    # nosec B608: `table` is allowlisted by _checked_table above; the
+    # value interpolated here can only be a known entity table name.
     return conn.execute(
-        "SELECT 1 FROM %s WHERE id = ?" % table, (record_id,)
+        f"SELECT 1 FROM {table} WHERE id = ?", (record_id,)  # nosec B608
     ).fetchone() is not None
 
 
@@ -57,7 +68,7 @@ def _require_id(rec, table):
     rid = rec.get("id")
     if not rid or not isinstance(rid, str):
         raise ValueError(
-            "Record in %r is missing a valid string id: %r." % (table, rec)
+            f"Record in {table!r} is missing a valid string id: {rec!r}."
         )
     return rid
 
@@ -72,8 +83,10 @@ def export_to_json(db_path, out_dir):
     conn = connect(db_path)
     try:
         for table, filename in _TABLES:
+            # nosec B608: `table` comes from the module-level _TABLES
+            # constant; it is never derived from user input.
             rows = conn.execute(
-                "SELECT * FROM %s ORDER BY rowid" % table
+                f"SELECT * FROM {table} ORDER BY rowid"  # nosec B608
             ).fetchall()
             records = []
             for row in rows:
@@ -125,11 +138,10 @@ def _import_people(conn, records):
         name = rec.get("name")
         role = rec.get("role")
         if not name or not str(name).strip():
-            raise ValueError("Person %r is missing a name." % pid)
+            raise ValueError(f"Person {pid!r} is missing a name.")
         if role not in PERSON_ROLES:
             raise ValueError(
-                "Person %r has invalid role %r. Must be one of %s."
-                % (pid, role, list(PERSON_ROLES))
+                f"Person {pid!r} has invalid role {role!r}. Must be one of {list(PERSON_ROLES)}."
             )
         conn.execute(
             "INSERT INTO people (id, name, role, email, active)"
@@ -148,15 +160,14 @@ def _import_projects(conn, records):
         owner_id = rec.get("owner_id")
         status = rec.get("status", "Proposed")
         if not name or not str(name).strip():
-            raise ValueError("Project %r is missing a name." % pid)
+            raise ValueError(f"Project {pid!r} is missing a name.")
         if not owner_id or not _exists(conn, "people", owner_id):
             raise ValueError(
-                "Project %r references missing person (owner_id) %r."
-                % (pid, owner_id)
+                f"Project {pid!r} references missing person (owner_id) {owner_id!r}."
             )
         if status not in TASK_STATUSES:
             raise ValueError(
-                "Project %r has invalid status %r." % (pid, status)
+                f"Project {pid!r} has invalid status {status!r}."
             )
         conn.execute(
             "INSERT INTO projects (id, name, description, owner_id, status,"
@@ -178,27 +189,24 @@ def _import_intakes(conn, records):
         decided_by = rec.get("decided_by")
         project_id = rec.get("project_id")
         if not title or not str(title).strip():
-            raise ValueError("Intake %r is missing a title." % iid)
+            raise ValueError(f"Intake {iid!r} is missing a title.")
         if not scope or not str(scope).strip():
-            raise ValueError("Intake %r is missing a scope." % iid)
+            raise ValueError(f"Intake {iid!r} is missing a scope.")
         if not requester_id or not _exists(conn, "people", requester_id):
             raise ValueError(
-                "Intake %r references missing person (requester_id) %r."
-                % (iid, requester_id)
+                f"Intake {iid!r} references missing person (requester_id) {requester_id!r}."
             )
         if status not in INTAKE_STATUSES:
             raise ValueError(
-                "Intake %r has invalid status %r." % (iid, status)
+                f"Intake {iid!r} has invalid status {status!r}."
             )
         if decided_by and not _exists(conn, "people", decided_by):
             raise ValueError(
-                "Intake %r references missing person (decided_by) %r."
-                % (iid, decided_by)
+                f"Intake {iid!r} references missing person (decided_by) {decided_by!r}."
             )
         if project_id and not _exists(conn, "projects", project_id):
             raise ValueError(
-                "Intake %r references missing project %r."
-                % (iid, project_id)
+                f"Intake {iid!r} references missing project {project_id!r}."
             )
         conn.execute(
             "INSERT INTO intakes (id, title, scope, description,"
@@ -222,16 +230,15 @@ def _import_reviews(conn, records):
         decision = rec.get("decision")
         if not task_id or not _exists(conn, "tasks", task_id):
             raise ValueError(
-                "Review %r references missing task %r." % (rid, task_id)
+                f"Review {rid!r} references missing task {task_id!r}."
             )
         if not reviewer_id or not _exists(conn, "people", reviewer_id):
             raise ValueError(
-                "Review %r references missing person (reviewer_id) %r."
-                % (rid, reviewer_id)
+                f"Review {rid!r} references missing person (reviewer_id) {reviewer_id!r}."
             )
         if decision not in ("Accepted", "Rejected"):
             raise ValueError(
-                "Review %r has invalid decision %r." % (rid, decision)
+                f"Review {rid!r} has invalid decision {decision!r}."
             )
         conn.execute(
             "INSERT INTO reviews (id, task_id, reviewer_id, decision,"
@@ -250,15 +257,14 @@ def _import_milestones(conn, records):
         project_id = rec.get("project_id")
         status = rec.get("status", "Proposed")
         if not name or not str(name).strip():
-            raise ValueError("Milestone %r is missing a name." % mid)
+            raise ValueError(f"Milestone {mid!r} is missing a name.")
         if not project_id or not _exists(conn, "projects", project_id):
             raise ValueError(
-                "Milestone %r references missing project %r."
-                % (mid, project_id)
+                f"Milestone {mid!r} references missing project {project_id!r}."
             )
         if status not in MILESTONE_STATUSES:
             raise ValueError(
-                "Milestone %r has invalid status %r." % (mid, status)
+                f"Milestone {mid!r} has invalid status {status!r}."
             )
         conn.execute(
             "INSERT INTO milestones (id, project_id, name, description,"
@@ -279,15 +285,14 @@ def _import_tasks(conn, records):
         milestone_id = rec.get("milestone_id")
         status = rec.get("status", "Proposed")
         if not title or not str(title).strip():
-            raise ValueError("Task %r is missing a title." % tid)
+            raise ValueError(f"Task {tid!r} is missing a title.")
         if not project_id or not _exists(conn, "projects", project_id):
             raise ValueError(
-                "Task %r references missing project %r." % (tid, project_id)
+                f"Task {tid!r} references missing project {project_id!r}."
             )
         if assignee_id and not _exists(conn, "people", assignee_id):
             raise ValueError(
-                "Task %r references missing person (assignee_id) %r."
-                % (tid, assignee_id)
+                f"Task {tid!r} references missing person (assignee_id) {assignee_id!r}."
             )
         if milestone_id:
             ms = conn.execute(
@@ -296,28 +301,24 @@ def _import_tasks(conn, records):
             ).fetchone()
             if not ms:
                 raise ValueError(
-                    "Task %r references missing milestone %r."
-                    % (tid, milestone_id)
+                    f"Task {tid!r} references missing milestone {milestone_id!r}."
                 )
             if ms["project_id"] != project_id:
                 raise ValueError(
-                    "Task %r: milestone %r belongs to project %r, not %r."
-                    % (tid, milestone_id, ms["project_id"], project_id)
+                    "Task {!r}: milestone {!r} belongs to project {!r}, not {!r}.".format(tid, milestone_id, ms["project_id"], project_id)
                 )
         if status not in TASK_STATUSES:
-            raise ValueError("Task %r has invalid status %r." % (tid, status))
+            raise ValueError(f"Task {tid!r} has invalid status {status!r}.")
         reviewer_id = rec.get("reviewer_id")
         if reviewer_id and not _exists(conn, "people", reviewer_id):
             raise ValueError(
-                "Task %r references missing person (reviewer_id) %r."
-                % (tid, reviewer_id)
+                f"Task {tid!r} references missing person (reviewer_id) {reviewer_id!r}."
             )
         supersedes_task_id = rec.get("supersedes_task_id")
         if supersedes_task_id and not _exists(conn, "tasks",
                                               supersedes_task_id):
             raise ValueError(
-                "Task %r references missing task (supersedes_task_id) %r."
-                % (tid, supersedes_task_id)
+                f"Task {tid!r} references missing task (supersedes_task_id) {supersedes_task_id!r}."
             )
         conn.execute(
             "INSERT INTO tasks (id, project_id, milestone_id, title,"
@@ -341,20 +342,18 @@ def _import_evidence(conn, records):
         evidence_type = rec.get("evidence_type")
         if not task_id or not _exists(conn, "tasks", task_id):
             raise ValueError(
-                "Evidence %r references missing task %r." % (eid, task_id)
+                f"Evidence {eid!r} references missing task {task_id!r}."
             )
         if not submitted_by or not _exists(conn, "people", submitted_by):
             raise ValueError(
-                "Evidence %r references missing person (submitted_by) %r."
-                % (eid, submitted_by)
+                f"Evidence {eid!r} references missing person (submitted_by) {submitted_by!r}."
             )
         if verified_by and not _exists(conn, "people", verified_by):
             raise ValueError(
-                "Evidence %r references missing person (verified_by) %r."
-                % (eid, verified_by)
+                f"Evidence {eid!r} references missing person (verified_by) {verified_by!r}."
             )
         if not evidence_type or not str(evidence_type).strip():
-            raise ValueError("Evidence %r is missing evidence_type." % eid)
+            raise ValueError(f"Evidence {eid!r} is missing evidence_type.")
         conn.execute(
             "INSERT INTO evidence (id, task_id, submitted_by, evidence_type,"
             " url_or_path, submitted_at, verified_by, verified_at)"

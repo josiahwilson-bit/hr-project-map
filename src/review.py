@@ -23,7 +23,6 @@ Rules enforced here (on top of the transition table):
 
 import uuid
 
-from . import audit
 from .db import connect, row_to_dict, utcnow
 from .tasks import _get_task_row, update_task_status
 
@@ -33,10 +32,10 @@ def _require_active_person(conn, person_id, action):
         "SELECT id, active FROM people WHERE id = ?", (person_id,)
     ).fetchone()
     if not row:
-        raise ValueError("No person found with id %r." % person_id)
+        raise ValueError(f"No person found with id {person_id!r}.")
     if not row["active"]:
         raise ValueError(
-            "Person %r is inactive and cannot %s." % (person_id, action)
+            f"Person {person_id!r} is inactive and cannot {action}."
         )
 
 
@@ -44,8 +43,7 @@ def _require_matching_reviewer(conn, task_row, task_id, reviewer_id):
     """The reviewer deciding must be the reviewer who started the review."""
     if task_row["reviewer_id"] != reviewer_id:
         raise ValueError(
-            "Review of task %r was started by %r, not %r."
-            % (task_id, task_row["reviewer_id"], reviewer_id)
+            "Review of task {!r} was started by {!r}, not {!r}.".format(task_id, task_row["reviewer_id"], reviewer_id)
         )
 
 
@@ -79,8 +77,7 @@ def start_review(db_path, task_id, reviewer_id, actor_id=None):
         row = _get_task_row(conn, task_id)
         if row["status"] != "Submitted":
             raise ValueError(
-                "Only Submitted tasks can enter review; task %r is %r."
-                % (task_id, row["status"])
+                "Only Submitted tasks can enter review; task {!r} is {!r}.".format(task_id, row["status"])
             )
         _require_active_person(conn, reviewer_id, "review tasks")
         conn.execute(
@@ -110,8 +107,7 @@ def accept_review(db_path, task_id, reviewer_id, note=None, actor_id=None):
         row = _get_task_row(conn, task_id)
         if row["status"] != "Under Review":
             raise ValueError(
-                "Only tasks Under Review can be accepted; task %r is %r."
-                % (task_id, row["status"])
+                "Only tasks Under Review can be accepted; task {!r} is {!r}.".format(task_id, row["status"])
             )
         _require_active_person(conn, reviewer_id, "accept reviews")
         _require_matching_reviewer(conn, row, task_id, reviewer_id)
@@ -142,8 +138,7 @@ def reject_review(db_path, task_id, reviewer_id, reason, actor_id=None):
         row = _get_task_row(conn, task_id)
         if row["status"] != "Under Review":
             raise ValueError(
-                "Only tasks Under Review can be rejected; task %r is %r."
-                % (task_id, row["status"])
+                "Only tasks Under Review can be rejected; task {!r} is {!r}.".format(task_id, row["status"])
             )
         _require_active_person(conn, reviewer_id, "reject reviews")
         _require_matching_reviewer(conn, row, task_id, reviewer_id)
@@ -164,7 +159,7 @@ def get_reviews(db_path, task_id):
         if not conn.execute(
             "SELECT id FROM tasks WHERE id = ?", (task_id,)
         ).fetchone():
-            raise ValueError("No task found with id %r." % task_id)
+            raise ValueError(f"No task found with id {task_id!r}.")
         rows = conn.execute(
             "SELECT * FROM reviews WHERE task_id = ? ORDER BY decided_at,"
             " rowid",

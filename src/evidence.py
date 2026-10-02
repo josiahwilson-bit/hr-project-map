@@ -21,10 +21,10 @@ def _require_active_person(conn, person_id, action):
         "SELECT id, active FROM people WHERE id = ?", (person_id,)
     ).fetchone()
     if not row:
-        raise ValueError("No person found with id %r." % person_id)
+        raise ValueError(f"No person found with id {person_id!r}.")
     if not row["active"]:
         raise ValueError(
-            "Person %r is inactive and cannot %s." % (person_id, action)
+            f"Person {person_id!r} is inactive and cannot {action}."
         )
 
 
@@ -43,12 +43,12 @@ def submit_evidence(db_path, task_id, submitted_by, evidence_type,
             "SELECT id, status FROM tasks WHERE id = ?", (task_id,)
         ).fetchone()
         if not task:
-            raise ValueError("No task found with id %r." % task_id)
+            raise ValueError(f"No task found with id {task_id!r}.")
         _require_active_person(conn, submitted_by, "submit evidence")
         if task["status"] not in ("In Progress", "Submitted"):
             raise ValueError(
-                "Cannot submit evidence for task in status %r."
-                " Task must be In Progress." % task["status"]
+                "Cannot submit evidence for task in status {!r}."
+                " Task must be In Progress.".format(task["status"])
             )
         evidence_id = uuid.uuid4().hex
         conn.execute(
@@ -82,16 +82,16 @@ def verify_evidence(db_path, evidence_id, verified_by):
             "SELECT * FROM evidence WHERE id = ?", (evidence_id,)
         ).fetchone()
         if not ev:
-            raise ValueError("No evidence found with id %r." % evidence_id)
+            raise ValueError(f"No evidence found with id {evidence_id!r}.")
         if ev["verified_by"]:
             raise ValueError(
-                "Evidence %r was already verified." % evidence_id
+                f"Evidence {evidence_id!r} was already verified."
             )
         _require_active_person(conn, verified_by, "verify evidence")
         if verified_by == ev["submitted_by"]:
             raise ValueError(
-                "Self-verification is not allowed: verifier %r is also the"
-                " submitter." % verified_by
+                f"Self-verification is not allowed: verifier {verified_by!r} is also the"
+                " submitter."
             )
         conn.execute(
             "UPDATE evidence SET verified_by = ?, verified_at = ?"
@@ -109,7 +109,7 @@ def verify_evidence(db_path, evidence_id, verified_by):
     audit.log_event(
         db_path, "task", ev["task_id"], task_status, task_status,
         actor_id=verified_by,
-        note="evidence %s verified" % evidence_id[:8],
+        note=f"evidence {evidence_id[:8]} verified",
     )
 
 

@@ -27,10 +27,10 @@ def _require_active_person(conn, person_id, action):
         "SELECT id, active FROM people WHERE id = ?", (person_id,)
     ).fetchone()
     if not row:
-        raise ValueError("No person found with id %r." % person_id)
+        raise ValueError(f"No person found with id {person_id!r}.")
     if not row["active"]:
         raise ValueError(
-            "Person %r is inactive and cannot %s." % (person_id, action)
+            f"Person {person_id!r} is inactive and cannot {action}."
         )
 
 
@@ -50,8 +50,7 @@ def complete_task(db_path, task_id, actor_id=None):
         row = _get_task_row(conn, task_id)
         if row["status"] != "Accepted":
             raise ValueError(
-                "Only Accepted tasks can be completed; task %r is %r."
-                % (task_id, row["status"])
+                "Only Accepted tasks can be completed; task {!r} is {!r}.".format(task_id, row["status"])
             )
         if not _has_evidence(conn, task_id):
             raise ValueError("cannot complete task without evidence")
@@ -75,8 +74,7 @@ def verify_task(db_path, task_id, verifier_id):
         row = _get_task_row(conn, task_id)
         if row["status"] != "Completed":
             raise ValueError(
-                "Only Completed tasks can be verified; task %r is %r."
-                % (task_id, row["status"])
+                "Only Completed tasks can be verified; task {!r} is {!r}.".format(task_id, row["status"])
             )
         _require_active_person(conn, verifier_id, "verify tasks")
         ev = conn.execute(
@@ -88,8 +86,8 @@ def verify_task(db_path, task_id, verifier_id):
         if not ev:
             raise ValueError(
                 "cannot verify task without independent verification:"
-                " task %r has no evidence verified by %r (distinct from"
-                " the submitter)" % (task_id, verifier_id)
+                f" task {task_id!r} has no evidence verified by {verifier_id!r} (distinct from"
+                " the submitter)"
             )
     finally:
         conn.close()
