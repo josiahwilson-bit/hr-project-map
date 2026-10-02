@@ -109,3 +109,55 @@ def project_summary(db_path, project_id):
         }
     finally:
         conn.close()
+
+
+_SEMANTIC_COLUMNS = {
+    "status": "t.status",
+    "project_id": "t.project_id",
+    "assignee_id": "t.assignee_id",
+    "reviewer_id": "t.reviewer_id",
+    "milestone_id": "t.milestone_id",
+}
+
+
+def semantic_search(db_path, filters):
+    """Structured filter dict -> parameterized SELECT. Read-only.
+
+    ``filters`` maps allowlisted keys (see ``_SEMANTIC_COLUMNS``) to values.
+    Unknown keys raise ValueError. An empty dict returns all tasks.
+    Every non-None value is bound as a parameter; None becomes IS NULL.
+    Nothing caller-supplied is ever interpolated into the SQL.
+    """
+    unknown = [k for k in filters if k not in _SEMANTIC_COLUMNS]
+    if unknown:
+        raise ValueError(
+            "Unknown filter keys: {}. Allowed: {}.".format(
+                ", ".join(sorted(unknown)),
+                ", ".join(sorted(_SEMANTIC_COLUMNS)),
+            )
+        )
+    conn = connect(db_path)
+    try:
+        sql = (
+            "SELECT t.*, p.name AS project_name FROM tasks t"
+            " JOIN projects p ON p.id = t.project_id"
+        )
+        params = []
+        if filters:
+            clauses = []
+            for key, value in filters.items():
+                # nosec B608: `column` comes from the fixed _SEMANTIC_COLUMNS
+                # allowlist (key already validated above); values are bound
+                # via `params`, never interpolated. No SQL injection.
+                column = _SEMANTIC_COLUMNS[key]
+                if value is None:
+                    clauses.append("{} IS NULL".format(column))  # nosec B608
+                else:
+                    clauses.append("{} = ?".format(column))  # nosec B608
+                    params.append(value)
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY t.rowid"
+        rows = conn.execute(sql, params).fetchall()
+        return [row_to_dict(r) for r in rows]
+    finally:
+        conn.close()
