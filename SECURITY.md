@@ -11,7 +11,7 @@
 
 **Do not file public issues for security vulnerabilities.**
 
-Report them privately by email to the maintainer. Include:
+Report them privately by email to the maintainer at zppcurl@gmail.com. Include:
 - A description of the vulnerability
 - Steps to reproduce
 - The version affected
