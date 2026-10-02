@@ -151,9 +151,9 @@ def semantic_search(db_path, filters):
                 # via `params`, never interpolated. No SQL injection.
                 column = _SEMANTIC_COLUMNS[key]
                 if value is None:
-                    clauses.append("{} IS NULL".format(column))  # nosec B608
+                    clauses.append(f"{column} IS NULL")  # nosec B608
                 else:
-                    clauses.append("{} = ?".format(column))  # nosec B608
+                    clauses.append(f"{column} = ?")  # nosec B608
                     params.append(value)
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY t.rowid"
