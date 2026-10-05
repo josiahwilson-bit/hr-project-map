@@ -1,0 +1,103 @@
+name: "\U0001F9EA Tester feedback"
+description: "You tried hr-project-map — tell us what happened, in your own words."
+title: "[tester-feedback]: "
+labels: ["tester-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying hr-project-map. A short honest report is the most useful thing you can give us.
+        > ⚠️ **Privacy:** please don't paste credentials, API keys, proprietary code, or personal data.
+        > The demo uses synthetic data — nothing real needs to appear here.
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: "Did it work?"
+      options:
+        - "Yes, on the first try"
+        - "Yes, after some troubleshooting"
+        - "No — it failed"
+        - "I couldn't get it running"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: "What happened, and what did you think?"
+      description: "In your own words: what you tried, what worked or didn't, and your honest take."
+      placeholder: "I tried it, it worked, and here's what I thought…"
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        **Optional details** — anything below helps us reproduce and understand your report, but none of it is required.
+  - type: input
+    id: environment
+    attributes:
+      label: "Environment (optional)"
+      description: "OS and Python version."
+      placeholder: "Ubuntu 24.04, Python 3.12"
+    validations:
+      required: false
+  - type: input
+    id: version_tested
+    attributes:
+      label: "Version tested (optional)"
+      description: "Release tag or commit you ran."
+      placeholder: "v0.4.1"
+    validations:
+      required: false
+  - type: dropdown
+    id: demo_attempted
+    attributes:
+      label: "Did you try ./demo.sh? (optional)"
+      options:
+        - "Yes — it completed"
+        - "Yes — it failed"
+        - "No — I used the manual quickstart"
+        - "No"
+    validations:
+      required: false
+  - type: input
+    id: time_to_first_use
+    attributes:
+      label: "Approximate time to first successful workflow (optional)"
+      description: "Wall-clock time from clone to a working run, roughly."
+      placeholder: "about 5 minutes"
+    validations:
+      required: false
+  - type: textarea
+    id: confusion
+    attributes:
+      label: "Confusing steps or errors (optional)"
+      description: "Anything unclear, any error message that tripped you up."
+    validations:
+      required: false
+  - type: textarea
+    id: real_problem_verdict
+    attributes:
+      label: "Does evidence-gated completion solve a real problem for you? (optional)"
+      description: "Honest take — useful, or ceremony without payoff?"
+    validations:
+      required: false
+  - type: textarea
+    id: terminal_output
+    attributes:
+      label: "Terminal output (optional)"
+      description: "Paste relevant output if it helps reproduce what you saw. Trim anything sensitive."
+      render: shell
+    validations:
+      required: false
+  - type: dropdown
+    id: use_again
+    attributes:
+      label: "Do you intend to use it again? (optional)"
+      options:
+        - "Yes"
+        - "Maybe"
+        - "No"
+        - "Prefer not to say"
+    validations:
+      required: false

@@ -136,6 +136,17 @@ hr-project-map/
 - [Contributing](CONTRIBUTING.md) — how to contribute
 - [Security](SECURITY.md) — how to report vulnerabilities
 
+## Tester feedback
+
+Tried the demo or the quickstart? Tell us what happened — a short honest
+report is the most useful thing you can give us:
+[open a tester-feedback issue](https://github.com/josiahwilson-bit/hr-project-map/issues/new?template=tester-feedback.yml)
+or post in [Discussions](https://github.com/josiahwilson-bit/hr-project-map/discussions).
+Two questions are required ("did it work?", "what happened and what did you
+think?"); everything else is optional. Please don't paste credentials, API
+keys, proprietary code, or personal data — the demo uses synthetic data.
+Stars and forks are appreciated but are never counted as usage evidence.
+
 ## Status
 
 **v0.4.0** (current): structured intake, human review workflow, evidence-gated completion, append-only audit trail, read-only dashboards, JSON ↔ SQLite sync. 57 tests passing in CI (Ruff, Bandit, OpenSSF Scorecard).
