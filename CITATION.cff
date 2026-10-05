@@ -1,0 +1,27 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate and validate the file.
+cff-version: 1.2.0
+title: HR-PM Map — Human-Resource Project Management Map
+message: >-
+  If you use this software, please cite it as below.
+type: software
+authors:
+  - family-names: Wilson
+    given-names: Josiah
+version: 0.4.1
+date-released: '2026-10-05'
+license: MIT
+repository-code: 'https://github.com/josiahwilson-bit/hr-project-map'
+abstract: >-
+  A single source-of-truth data model linking Person → Responsibility →
+  Project → Task → Deliverable → Evidence → Verification → Completion
+  (SQLite + Python, zero-cost stack). Track people, projects, tasks, and
+  evidence in a local SQLite database where nothing can be marked
+  complete without proof.
+keywords:
+  - human-resources
+  - project-management
+  - sqlite
+  - python
+  - evidence
+  - data-model
